@@ -1,0 +1,9 @@
+.DS_Store
+*.bin
+*.html
+*.js
+*.png
+
+config.txt
+log.txt
+sdl_controllers.txt
