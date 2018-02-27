@@ -119,11 +119,11 @@ end
 
 function outline_rect(x, y, x2, y2, fill, outline)
     outline = outline or 0
-    line(x, y - 1, x2, y - 1, outline)
-    line(x2 + 1, y, x2 + 1, y2, outline)
-    line(x2, y2 + 1, x, y2 + 1, outline)
-    line(x - 1, y2, x - 1, y, outline)
-    rectfill(x, y, x2, y2, fill)
+    line(x, y, x2, y, outline)
+    line(x2, y, x2, y2, outline)
+    line(x2, y2, x, y2, outline)
+    line(x, y2, x, y, outline)
+    rectfill(x + 1, y + 1, x2 - 1, y2 - 1, fill)
 end
 
 function outline_circ(x, y, r, fill, outline)
@@ -414,8 +414,9 @@ collider = {
 
         -- loop over all colliders if parent has collider
         -- the ground never starts a collision
-        if not(parent.is_ground) then
+        if parent.collision and not(parent.is_ground) then
 			local chunk = flr(self.x / win_w)
+
 			-- permanent colliders
 			for id, v in pairs(colliders['fixed']) do
 				self:check_collision(parent, v[2])
@@ -434,15 +435,13 @@ collider = {
 
     fixed_update = function(self, parent)
 
-        -- move collider to new position
-        local parent_coords = parent.velocity and parent.velocity.newvec or parent
-		self.x = parent_coords.x + self.offset.x
-		self.y = parent_coords.y + self.offset.y
+		self.x = parent.x + self.offset.x
+		self.y = parent.y + self.offset.y
 
     end,
 
     draw = function(self, parent)
-        if (show_colliders) rect(self.x, self.y, self.x + self.w - 1, self.y + self.h - 1, 11)
+        if (show_colliders) rect(self.x, self.y, self.x + self.w, self.y + self.h, 11)
     end
 }
 
@@ -790,32 +789,48 @@ local blob = {
     physical = true, -- this will add the properties x, y, w, and h (on compo init)
     velocity = copy(velocity),
     gravity = copy(gravity),
+    collider = copy(collider),
+
     init = function(self)
 
         -- make a circle or a rect
-        self.circle = flr(rnd(2)) > 0
-        if self.circle then
-            self.r = rnd(8)
+        -- self.circle = flr(rnd'2') > 0
+        if false then
+            self.r = rnd'8'
         else
-            resize(self, rnd(16), rnd(16))
+            resize(self, rnd'14'+1, rnd'14'+1)
         end
 
         -- move it to a random position
-        translate(self, rnd(128), 64)
+        translate(self, rnd'128', 64)
 
         -- randomize the gravity on this object specifically
-        self.gravity:set(rnd(3) / 5)
+        self.gravity:set(rnd'3' / 2)
 
         -- randomize inititial velocity and cap
-        self.velocity:set(0,rnd(10)-5)
-        self.velocity:cap(0,15)
+        self.velocity:set(0,rnd'10'-5)
+        self.velocity:cap(15,15)
+
+        self.collider:set(self)
+
     end,
     update = function(self)
-        -- reverse velocity if below window bottom
+        -- reverse velocity if beyond window bounds
         if self.y + self.h > win_h then
             translate(self, self.x, win_h - self.h)
-            self.velocity:set(0, -6)
+            self.velocity.y = -6
+        elseif self.y < win_t then
+            translate(self, self.x, win_t)
+            self.velocity.y = 0
         end
+        if self.x < win_l then
+            translate(self, win_l, self.y)
+            self.velocity.x = 0.5
+        elseif self.x + self.w > win_r then
+            translate(self, win_r - self.w, self.y)
+            self.velocity.x = -0.5
+        end
+
     end,
     draw = function(self)
         -- draw the shape during the draw function
@@ -831,12 +846,53 @@ local blob = {
 local blob_colors = split'0, 1, 2, 13'
 
 -- add these objects to the list of actors
-local blob_count = 400
+local blob_count = 249
 for i = 1, blob_count do
     -- assign a color based on depth
     blob.color = blob_colors[ ceil((i / blob_count) * (#blob_colors)) ]
     add(actors, copy(blob))
 end
+
+-- make a special red blob with collision
+local collider_blob = copy(blob)
+collider_blob.init = function(self)
+    self.color = 7
+    resize(self, 16, 16)
+    translate(self, 56, 56)
+    self.velocity:set(2, 0)
+    self.collider:set(self)
+    self.gravity:set'0.3'
+end
+collider_blob.collision = function(self, newvec, other)
+    local direction = collision_direction(self.collider, other.collider)
+
+    -- this could be done better :/
+    -- it's a demo, gimme a break!
+    local bump_force_x, bump_force_y, x_bump, y_bump = self.velocity.x, self.velocity.y, other.velocity.x, other.velocity.y
+    if direction == 'left' or direction == '' then
+        x_bump = -bump_force_x - 2
+        other.x = newvec.x - other.w
+    elseif direction == 'right' then
+        x_bump = bump_force_x + 2
+        other.x = newvec.x + self.w
+    elseif direction == 'top' then
+        y_bump = -bump_force_y - 2
+        x_bump = rnd'2' - 1
+        other.y = newvec.y - other.h
+    elseif direction == 'bottom' then
+        y_bump = bump_force_y + 2
+        x_bump = rnd'2' - 1
+        other.y = newvec.y + self.h
+    end
+
+    self.color = rnd'16'
+
+    other.velocity:set(x_bump, y_bump)
+
+    return newvec
+end
+
+add(actors, collider_blob)
 
 -- not all actors need compos!
 local title_text = {
