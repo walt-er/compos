@@ -786,34 +786,39 @@ end
 -- copy compos to enable their functions
 -- set compo values insite of init
 -- include init(), update(), and draw() if this actor should have its own methods
-local blob_colors = split'0, 1, 2'
 local blob = {
-    physical = true,
+    physical = true, -- this will add the properties x, y, w, and h (on compo init)
     velocity = copy(velocity),
     gravity = copy(gravity),
     init = function(self)
+
+        -- make a circle or a rect
         self.circle = flr(rnd(2)) > 0
         if self.circle then
-            self.r = rnd(16)
+            self.r = rnd(8)
         else
             resize(self, rnd(16), rnd(16))
         end
 
+        -- move it to a random position
         translate(self, rnd(128), 64)
-        self.color = blob_colors[ ceil(rnd(#blob_colors)) ]
 
-        self.gravity:set(0.1)
+        -- randomize the gravity on this object specifically
+        self.gravity:set(rnd(3) / 5)
 
-        self.velocity:set(0,rnd(20)-10)
+        -- randomize inititial velocity and cap
+        self.velocity:set(0,rnd(10)-5)
         self.velocity:cap(0,15)
     end,
     update = function(self)
-        if self.y > win_h then
-            translate(self, rnd(128), 128)
-            self.velocity:set(0, rnd(5)-5)
+        -- reverse velocity if below window bottom
+        if self.y + self.h > win_h then
+            translate(self, self.x, win_h - self.h)
+            self.velocity:set(0, -6)
         end
     end,
     draw = function(self)
+        -- draw the shape during the draw function
         if self.circle then
             outline_circ(self.x, self.y, self.r, self.color, 6)
         else
@@ -822,9 +827,14 @@ local blob = {
     end
 }
 
+-- "split" is a handy method for reducing lengthy objects into 2-token function calls
+local blob_colors = split'0, 1, 2, 13'
+
 -- add these objects to the list of actors
-local blob_count = 300
+local blob_count = 400
 for i = 1, blob_count do
+    -- assign a color based on depth
+    blob.color = blob_colors[ ceil((i / blob_count) * (#blob_colors)) ]
     add(actors, copy(blob))
 end
 
@@ -833,7 +843,7 @@ local title_text = {
     update = function(self)
         self.y = 64 + sin(time()) * 8
 
-        --debugging: log out the y to see where the text is
+        -- debugging: log out the y to see where the text is
         -- log(self.y)
     end,
     draw = function(self)
@@ -858,12 +868,10 @@ function _update()
 end
 
 function _draw()
-    for i=0,1000 do
-        circ(rnd(128),rnd(128),1,0)
-    end
-
+    cls()
     compos_draw()
 end
+
 __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
