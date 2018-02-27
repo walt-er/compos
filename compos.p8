@@ -139,6 +139,12 @@ function outline_rect(x, y, x2, y2, fill, outline)
     rectfill(x, y, x2, y2, fill)
 end
 
+function outline_circ(x, y, r, fill, outline)
+    outline = outline or 0
+    circfill(x,y,r,fill)
+    circ(x,y,r,outline)
+end
+
 function zspr(n, dx, dy, w, h, flip_x, flip_y, dz)
 	if not(dz) or dz==1 then
 		spr(n,dx,dy,w,h,flip_x,flip_y)
@@ -353,6 +359,8 @@ function collision_direction(col1, col2, flipped)
     end
 end
 
+collider_id = 0
+colliders = { fixed = {} }
 collider = {
     physical = true,
     offset = vec(0, 0),
@@ -367,10 +375,13 @@ collider = {
         self.x = parent.x + self.offset.x
         self.y = parent.y + self.offset.y
 
+        parent.id = collider_id
+        collider_id += 1
+
         -- add to array of colliders
 		self.chunk = fixed and 'fixed' or ''..flr(self.x / win_w)
 		if (not(colliders[self.chunk])) colliders[self.chunk] = {}
-        colliders[self.chunk][''..parent.id] = { self, parent }
+        colliders[self.chunk][''..collider_id] = { self, parent }
 
     end,
 	move = function(self, newvec)
@@ -451,15 +462,12 @@ collider = {
 --
 
 gravity = {
-    force = 1.1,
+    force = 1,
     set = function(self, force)
         self.force = force
     end,
     early_update = function(self, parent)
-		-- apply gravity if parent within frame
-		if parent.x < cam.x + win_w and parent.x + parent.w > cam.x then
-	        parent.velocity.y += self.force
-		end
+        parent.velocity.y += self.force
     end,
     trigger_grounding = function(self, parent, other, newvec)
 
@@ -725,13 +733,11 @@ function compos_update()
 	end
 	permalogs = new_permalogs
 
-	cam:early_update()
-
 	-- loop over all actors to determine if in frame
 	for actor in all(actors) do
 
 		-- only loop over (nearly) visible actors
-		if actor.x and not(actor.fixed) then
+		if cam.x and actor.x and not(actor.fixed) then
 			actor.in_frame = actor.x >= cam.x - win_w * 0.1 and actor.x <= cam.x + win_w * 1.1 and actor.y >= cam.y - win_h * 0.1 and actor.y <= cam.y + win_h * 1.1
 		end
 
@@ -780,10 +786,99 @@ function compos_draw()
 
 	-- debug logs
 	for i = 1, #logs do
-		outline_print(logs[i], cam.x + 5, cam.y + 5 + ((i - 1) * tile), 7)
+        camera()
+		outline_print(logs[i], 5, 5 + ((i - 1) * tile), 7)
 	end
 end
 
+
+
+-- =======================================================
+-- demo!
+-- =======================================================
+
+-- make actors as objects
+-- copy compos to enable their functions
+-- set compo values insite of init
+-- include init(), update(), and draw() if this actor should have its own methods
+local blob_colors = split'0, 1, 2'
+local blob = {
+    physical = true,
+    velocity = copy(velocity),
+    gravity = copy(gravity),
+    init = function(self)
+        self.circle = flr(rnd(2)) > 0
+        if self.circle then
+            self.r = rnd(16)
+        else
+            resize(self, rnd(16), rnd(16))
+        end
+
+        translate(self, rnd(128), 64)
+        self.color = blob_colors[ ceil(rnd(#blob_colors)) ]
+
+        self.gravity:set(0.1)
+
+        self.velocity:set(0,rnd(20)-10)
+        self.velocity:cap(0,15)
+    end,
+    update = function(self)
+        if self.y > win_h then
+            translate(self, rnd(128), 128)
+            self.velocity:set(0, rnd(5)-5)
+        end
+    end,
+    draw = function(self)
+        if self.circle then
+            outline_circ(self.x, self.y, self.r, self.color, 6)
+        else
+            outline_rect(self.x, self.y, self.x + self.w, self.y + self.h, self.color, 6)
+        end
+    end
+}
+
+-- add these objects to the list of actors
+local blob_count = 300
+for i = 1, blob_count do
+    add(actors, copy(blob))
+end
+
+-- not all actors need compos!
+local title_text = {
+    update = function(self)
+        self.y = 64 + sin(time()) * 8
+
+        --debugging: log out the y to see where the text is
+        -- log(self.y)
+    end,
+    draw = function(self)
+        local message = 'compos!'
+        outline_print(message, 64 - #message * 2, self.y, 7, 8)
+    end
+}
+add(actors, title_text)
+
+-- pico8 lifecycle functions
+-- call compos_* functions or add other scene logic
+function _init()
+    compos_init()
+end
+
+function _update()
+    compos_update()
+
+    -- log out performance
+    log('actors: '..blob_count+1)
+    log('fps: '..stat(7))
+end
+
+function _draw()
+    for i=0,1000 do
+        circ(rnd(128),rnd(128),1,0)
+    end
+
+    compos_draw()
+end
 
 
 __gfx__
