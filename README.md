@@ -1,5 +1,23 @@
-# compos
-A suite of reusable components for PICO-8
+# compos: reusable components object-oriented PICO-8
+
+compos: like "components", but with fewer characters!
+
+compos independent, reusable objects that can be added to your game's actors to give them certain behaviors. compos manage their own state, initialization, updating, and drawing. The only thing you might need to do is set some intitial values.
+
+There's a fair amount of overhead for defining so many components right out of the gate. But hopefully the savings come from how easy it is to attach behaviors to actors on the fly. This system is build with procedural generation in mind -- it's easy to spawn complex actors on the fly, mixing and matching qaulities without spending tokens.
+
+The compos include:
+* Position
+* Size
+* Velocity
+* Gravity
+* Collider
+* Age
+* Patrol
+
+This library also includes a number of helper functions, including methods for drawing sprites and primitives with outlines, integrated logging, generating vectors, copying tables, tiling sprites, and more.
+
+## using compos
 
 The most direct way to integrate compos into your project is simply copy pasting all of compos.lua into your cart, then deleting unwanted components and functions
 
@@ -9,9 +27,9 @@ You could also just hack compo.p8, using that as a jumping off point!
 
 Here's some code that uses compos to draw hundreds of actors with positions, sizes, colors, and gravity:
 
-![Compos in action](https://raw.githubusercontent.com/walt-er/compos/compos.gif)
+![Compos in action](compos.gif)
 
-```
+```lua
 -- make actors as objects
 -- copy compos to enable their functions
 -- set compo values insite of init
