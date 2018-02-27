@@ -1,10 +1,10 @@
-# compos: reusable components object-oriented PICO-8
+# compos: reusable components for object-oriented PICO-8
 
 compos: like "components", but with fewer characters!
 
-compos independent, reusable objects that can be added to your game's actors to give them certain behaviors. compos manage their own state, initialization, updating, and drawing. The only thing you might need to do is set some intitial values.
+compos are independent, reusable objects that can be added to your game's actors to give them certain behaviors. compos manage their own state, initialization, updating, and drawing. The only thing you might need to do is set some intitial values.
 
-There's a fair amount of overhead for defining so many components right out of the gate. But hopefully the savings come from how easy it is to attach behaviors to actors on the fly. This system is build with procedural generation in mind -- it's easy to spawn complex actors on the fly, mixing and matching qaulities without spending tokens.
+There's a fair amount of overhead for defining so many components right out of the gate. But hopefully the savings come down the line: it's easy to attach behaviors to actors independently, so defining large numbers of actors with similar behaviors is simple and doesn't require messy class inheritance. This system is build with procedural generation in mind -- it's easy to spawn complex actors on the fly, mixing and matching qaulities without spending tokens.
 
 The compos include:
 * Position
@@ -17,7 +17,9 @@ The compos include:
 
 This library also includes a number of helper functions, including methods for drawing sprites and primitives with outlines, integrated logging, generating vectors, copying tables, tiling sprites, and more.
 
-## using compos
+More importantly, the methods for adding and removing actors from the active list, used in conjunction with the compos update pool (where actors and compos register to run their updates), mean that once you've defined an init(), update() or draw() function to an actor, they'll act just as you expect as they are added and removed from the global list of actors.  
+
+## Using compos
 
 The most direct way to integrate compos into your project is simply copy pasting all of compos.lua into your cart, then deleting unwanted components and functions
 
