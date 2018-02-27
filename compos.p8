@@ -1,8 +1,6 @@
 pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
-package={loaded={},_c={}}
-package._c["compos"]=function()
 -- use picotool's require() function to include this lua script
 
 -- =======================================================
@@ -779,14 +777,6 @@ function compos_draw()
 		outline_print(logs[i], 5, 5 + ((i - 1) * tile), 7)
 	end
 end
-end
-function require(p)
-local l=package.loaded
-if (l[p]==nil) l[p]=package._c[p]()
-if (l[p]==nil) l[p]=true
-return l[p]
-end
-require('compos')
 
 -- =======================================================
 -- demo!
