@@ -123,6 +123,12 @@ function outline_rect(x, y, x2, y2, fill, outline)
     rectfill(x, y, x2, y2, fill)
 end
 
+function outline_circ(x, y, r, fill, outline)
+    outline = outline or 0
+    circfill(x,y,r,fill)
+    circ(x,y,r,outline)
+end
+
 function zspr(n, dx, dy, w, h, flip_x, flip_y, dz)
 	if not(dz) or dz==1 then
 		spr(n,dx,dy,w,h,flip_x,flip_y)
@@ -337,6 +343,8 @@ function collision_direction(col1, col2, flipped)
     end
 end
 
+collider_id = 0
+colliders = { fixed = {} }
 collider = {
     physical = true,
     offset = vec(0, 0),
@@ -351,10 +359,13 @@ collider = {
         self.x = parent.x + self.offset.x
         self.y = parent.y + self.offset.y
 
+        parent.id = collider_id
+        collider_id += 1
+
         -- add to array of colliders
 		self.chunk = fixed and 'fixed' or ''..flr(self.x / win_w)
 		if (not(colliders[self.chunk])) colliders[self.chunk] = {}
-        colliders[self.chunk][''..parent.id] = { self, parent }
+        colliders[self.chunk][''..collider_id] = { self, parent }
 
     end,
 	move = function(self, newvec)
@@ -435,15 +446,12 @@ collider = {
 --
 
 gravity = {
-    force = 1.1,
+    force = 1,
     set = function(self, force)
         self.force = force
     end,
     early_update = function(self, parent)
-		-- apply gravity if parent within frame
-		if parent.x < cam.x + win_w and parent.x + parent.w > cam.x then
-	        parent.velocity.y += self.force
-		end
+        parent.velocity.y += self.force
     end,
     trigger_grounding = function(self, parent, other, newvec)
 
@@ -709,13 +717,11 @@ function compos_update()
 	end
 	permalogs = new_permalogs
 
-	cam:early_update()
-
 	-- loop over all actors to determine if in frame
 	for actor in all(actors) do
 
 		-- only loop over (nearly) visible actors
-		if actor.x and not(actor.fixed) then
+		if cam.x and actor.x and not(actor.fixed) then
 			actor.in_frame = actor.x >= cam.x - win_w * 0.1 and actor.x <= cam.x + win_w * 1.1 and actor.y >= cam.y - win_h * 0.1 and actor.y <= cam.y + win_h * 1.1
 		end
 
@@ -764,6 +770,7 @@ function compos_draw()
 
 	-- debug logs
 	for i = 1, #logs do
-		outline_print(logs[i], cam.x + 5, cam.y + 5 + ((i - 1) * tile), 7)
+        camera()
+		outline_print(logs[i], 5, 5 + ((i - 1) * tile), 7)
 	end
 end
