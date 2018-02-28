@@ -798,7 +798,7 @@ local blob = {
         if false then
             self.r = rnd'8'
         else
-            resize(self, rnd'14'+1, rnd'14'+1)
+            resize(self, flr(rnd'14'+1), flr(rnd'14'+1))
         end
 
         -- move it to a random position
@@ -815,6 +815,7 @@ local blob = {
 
     end,
     update = function(self)
+
         -- reverse velocity if beyond window bounds
         if self.y + self.h > win_h then
             translate(self, self.x, win_h - self.h)
@@ -825,10 +826,10 @@ local blob = {
         end
         if self.x < win_l then
             translate(self, win_l, self.y)
-            self.velocity.x = 0.5
+            self.velocity.x = 1 + rnd'1'
         elseif self.x + self.w > win_r then
             translate(self, win_r - self.w, self.y)
-            self.velocity.x = -0.5
+            self.velocity.x = -1 - rnd'1'
         end
 
     end,
@@ -864,25 +865,27 @@ collider_blob.init = function(self)
     self.gravity:set'0.3'
 end
 collider_blob.collision = function(self, newvec, other)
+
+    -- this function takes too colliders and returns the direction of collision
+    -- the direction returned (left, right, top, or bottom) is relative to the parent
     local direction = collision_direction(self.collider, other.collider)
+    if (direction == '') direction = rnd'2' > 0 and 'left' or 'right'
 
     -- this could be done better :/
     -- it's a demo, gimme a break!
     local bump_force_x, bump_force_y, x_bump, y_bump = self.velocity.x, self.velocity.y, other.velocity.x, other.velocity.y
-    if direction == 'left' or direction == '' then
-        x_bump = -bump_force_x - 2
-        other.x = newvec.x - other.w
+    if direction == 'left' then
+        x_bump = min(bump_force_x, 0) - 2
+        other.velocity.newvec.x = newvec.x - other.w -- newvec is where the parent object will be at the ned of this frame
     elseif direction == 'right' then
-        x_bump = bump_force_x + 2
-        other.x = newvec.x + self.w
+        x_bump = max(bump_force_x, 0) + 2
+        other.velocity.newvec.x = newvec.x + self.w
     elseif direction == 'top' then
-        y_bump = -bump_force_y - 2
-        x_bump = rnd'2' - 1
-        other.y = newvec.y - other.h
+        y_bump = min(bump_force_y) - 2
+        other.velocity.newvec.y = newvec.y - other.h
     elseif direction == 'bottom' then
-        y_bump = bump_force_y + 2
-        x_bump = rnd'2' - 1
-        other.y = newvec.y + self.h
+        y_bump = max(bump_force_y) + 2
+        other.velocity.newvec.y = newvec.y + self.h
     end
 
     self.color = rnd'16'
