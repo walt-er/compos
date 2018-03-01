@@ -13,6 +13,9 @@ win_w, win_h, win_l, win_r, win_t, win_b, tile, cam, player, player_states = 128
 -- helper functions
 -- =======================================================
 
+-- deep copy tables or other values
+-- by harraps
+-- https://www.lexaloffle.com/bbs/?tid=2951
 function copy(o)
     local c
     if type(o) == 'table' then
@@ -24,6 +27,17 @@ function copy(o)
         c = o
     end
     return c
+end
+
+-- del by index - keeps order
+-- by ultrabrite
+-- https://www.lexaloffle.com/bbs/?pid=35344
+function idel(t,i)
+    local n=#t
+    if i>0 and i<=n then
+        for j=i,n-1 do t[j]=t[j+1] end
+        t[n]=nil
+    end
 end
 
 function ceil(num)
@@ -180,8 +194,8 @@ end
 -- fill with sprite pattern (not 100% accurate?)
 function spritefill(rectangle, id, pattern_width)
 	pattern_width = pattern_width or 1;
-	for i = 0, flr(rectangle.w / (tile * pattern_width)) do
-		for j = 0, flr(rectangle.h / (tile * pattern_width)) do
+	for i = 0, flr(rectangle.w / (tile * pattern_width)) - 1 do
+		for j = 0, flr(rectangle.h / (tile * pattern_width)) - 1 do
 			spr(id, rectangle.x + (i * (tile * pattern_width)), rectangle.y + (j * (tile * pattern_width)))
 		end
 	end
@@ -659,19 +673,33 @@ function make_physical(thing)
 	thing.h = thing.h or tile
 end
 
+function register(actor, parent)
+    parent = parent or actor
+	for stage in all(stages) do
+		if actor[stage] then
+            add(update_pool[stage], {actor, parent})
+            actor.register_id = #update_pool[stage]
+        end
+	end
+end
+
+function unregister(actor)
+	for stage in all(stages) do
+		if actor[stage] then
+            idel(update_pool[stage], actor.register_id)
+        end
+	end
+end
+
 function init_actor(actor)
 	if (actor.physical) make_physical(actor)
-	for stage in all(stages) do
-		if (actor[stage]) add(update_pool[stage], {actor, actor})
-	end
+    register(actor)
 
 	for k, compo in pairs(actor) do
 		if type(compo) == 'table' then
 			if (compo.physical) make_physical(actor[k])
 			if (compo.init) actor[k]:init()
-			for stage in all(stages) do
-				if (compo[stage]) add(update_pool[stage], {compo, actor})
-			end
+			register(compo, actor)
 		end
 	end
 
@@ -688,6 +716,12 @@ end
 
 function remove_actor(actor)
     del(actors, actor)
+    unregister(actor)
+	for k, compo in pairs(actor) do
+		if type(compo) == 'table' then
+			unregister(compo)
+		end
+	end
     if (actor.collider) then
         colliders[actor.collider.chunk][''..actor.id] = nil
         del(colliders, nil)
@@ -745,7 +779,7 @@ function compos_update()
 	-- run updates on actors and props that have registered to update
 	for i = 1, #stages - 1 do -- don't include draw stages
 		local stage = stages[i]
-		for actor in all(update_pool[stage]) do
+		for k, actor in pairs(update_pool[stage]) do
 			if (actor[2].in_frame ~= false) actor[1][stage](actor[1], actor[2])
 		end
 	end
@@ -765,7 +799,7 @@ function compos_draw()
 	-- run draw on actors and props that have registered to draw
 	for i = #stages - 1, #stages do -- only include draw stages
 		local stage = stages[i]
-		for actor in all(update_pool[stage]) do
+		for k, actor in pairs(update_pool[stage]) do
 			if (actor[2].in_frame ~= false) actor[1][stage](actor[1], actor[2])
 		end
 	end
@@ -798,7 +832,7 @@ local blob = {
         if false then
             self.r = rnd'8'
         else
-            resize(self, flr(rnd'14'+1), flr(rnd'14'+1))
+            resize(self, flr(rnd'14'+2), flr(rnd'14'+2))
         end
 
         -- move it to a random position
