@@ -10,6 +10,9 @@ win_w, win_h, win_l, win_r, win_t, win_b, tile, cam, player, player_states = 128
 -- helper functions
 -- =======================================================
 
+-- deep copy tables or other values
+-- by harraps
+-- https://www.lexaloffle.com/bbs/?tid=2951
 function copy(o)
     local c
     if type(o) == 'table' then
@@ -21,6 +24,17 @@ function copy(o)
         c = o
     end
     return c
+end
+
+-- del by index - keeps order
+-- by ultrabrite
+-- https://www.lexaloffle.com/bbs/?pid=35344
+function idel(t,i)
+    local n=#t
+    if i>0 and i<=n then
+        for j=i,n-1 do t[j]=t[j+1] end
+        t[n]=nil
+    end
 end
 
 function ceil(num)
@@ -116,10 +130,10 @@ end
 
 function outline_rect(x, y, x2, y2, fill, outline)
     outline = outline or 0
-    line(x, y - 1, x2, y - 1, outline)
-    line(x2 + 1, y, x2 + 1, y2, outline)
-    line(x2, y2 + 1, x, y2 + 1, outline)
-    line(x - 1, y2, x - 1, y, outline)
+    line(x, y-1, x2, y-1, outline)
+    line(x2+1, y, x2+1, y2, outline)
+    line(x2, y2+1, x, y2+1, outline)
+    line(x-1, y2, x-1, y, outline)
     rectfill(x, y, x2, y2, fill)
 end
 
@@ -177,8 +191,8 @@ end
 -- fill with sprite pattern (not 100% accurate?)
 function spritefill(rectangle, id, pattern_width)
 	pattern_width = pattern_width or 1;
-	for i = 0, flr(rectangle.w / (tile * pattern_width)) do
-		for j = 0, flr(rectangle.h / (tile * pattern_width)) do
+	for i = 0, flr(rectangle.w / (tile * pattern_width)) - 1 do
+		for j = 0, flr(rectangle.h / (tile * pattern_width)) - 1 do
 			spr(id, rectangle.x + (i * (tile * pattern_width)), rectangle.y + (j * (tile * pattern_width)))
 		end
 	end
@@ -411,8 +425,9 @@ collider = {
 
         -- loop over all colliders if parent has collider
         -- the ground never starts a collision
-        if not(parent.is_ground) then
+        if parent.collision and not(parent.is_ground) then
 			local chunk = flr(self.x / win_w)
+
 			-- permanent colliders
 			for id, v in pairs(colliders['fixed']) do
 				self:check_collision(parent, v[2])
@@ -431,15 +446,13 @@ collider = {
 
     fixed_update = function(self, parent)
 
-        -- move collider to new position
-        local parent_coords = parent.velocity and parent.velocity.newvec or parent
-		self.x = parent_coords.x + self.offset.x
-		self.y = parent_coords.y + self.offset.y
+		self.x = parent.x + self.offset.x
+		self.y = parent.y + self.offset.y
 
     end,
 
     draw = function(self, parent)
-        if (show_colliders) rect(self.x, self.y, self.x + self.w - 1, self.y + self.h - 1, 11)
+        if (show_colliders) rect(self.x, self.y, self.x + self.w, self.y + self.h, 11)
     end
 }
 
@@ -657,19 +670,33 @@ function make_physical(thing)
 	thing.h = thing.h or tile
 end
 
+function register(actor, parent)
+    parent = parent or actor
+	for stage in all(stages) do
+		if actor[stage] then
+            add(update_pool[stage], {actor, parent})
+            actor.register_id = #update_pool[stage]
+        end
+	end
+end
+
+function unregister(actor)
+	for stage in all(stages) do
+		if actor[stage] then
+            idel(update_pool[stage], actor.register_id)
+        end
+	end
+end
+
 function init_actor(actor)
 	if (actor.physical) make_physical(actor)
-	for stage in all(stages) do
-		if (actor[stage]) add(update_pool[stage], {actor, actor})
-	end
+    register(actor)
 
 	for k, compo in pairs(actor) do
 		if type(compo) == 'table' then
 			if (compo.physical) make_physical(actor[k])
 			if (compo.init) actor[k]:init()
-			for stage in all(stages) do
-				if (compo[stage]) add(update_pool[stage], {compo, actor})
-			end
+			register(compo, actor)
 		end
 	end
 
@@ -686,6 +713,12 @@ end
 
 function remove_actor(actor)
     del(actors, actor)
+    unregister(actor)
+	for k, compo in pairs(actor) do
+		if type(compo) == 'table' then
+			unregister(compo)
+		end
+	end
     if (actor.collider) then
         colliders[actor.collider.chunk][''..actor.id] = nil
         del(colliders, nil)
@@ -743,7 +776,7 @@ function compos_update()
 	-- run updates on actors and props that have registered to update
 	for i = 1, #stages - 1 do -- don't include draw stages
 		local stage = stages[i]
-		for actor in all(update_pool[stage]) do
+		for k, actor in pairs(update_pool[stage]) do
 			if (actor[2].in_frame ~= false) actor[1][stage](actor[1], actor[2])
 		end
 	end
@@ -763,7 +796,7 @@ function compos_draw()
 	-- run draw on actors and props that have registered to draw
 	for i = #stages - 1, #stages do -- only include draw stages
 		local stage = stages[i]
-		for actor in all(update_pool[stage]) do
+		for k, actor in pairs(update_pool[stage]) do
 			if (actor[2].in_frame ~= false) actor[1][stage](actor[1], actor[2])
 		end
 	end
