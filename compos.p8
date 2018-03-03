@@ -140,8 +140,8 @@ end
 
 function outline_circ(x, y, r, fill, outline)
     outline = outline or 0
+    circfill(x,y,r+1,outline)
     circfill(x,y,r,fill)
-    circ(x,y,r,outline)
 end
 
 -- zoom a sprite to fill an area
@@ -353,41 +353,40 @@ function collision_direction(col1, col2, flipped)
     end
 end
 
--- get distance from point to line, used for collisions between circles and rects
--- by fredz72
--- https://www.lexaloffle.com/bbs/?tid=30028
-function dist2line(r,a,b)
-    local dx, dy=b.x-a.x, b.y-a.y
-    local d=sqrt(dx*dx+dy*dy)
-    return abs(dx*(a.y-r.y)-dy*(a.x-r.x))/d
+-- distance between two points
+-- by clowerweb
+-- https://github.com/clowerweb/Lib-Pico8/blob/master/distance.lua
+function dist(obj1, obj2)
+    return abs(sqrt((obj1.x-obj2.x)^2+(obj1.y-obj2.y)^2))
 end
 
+-- based in part on work by bridgs
+-- https://github.com/bridgs/trans-gal-jam
 function overlapping(obj1, obj2)
     local r1, r2 = obj1.r, obj2.r
 
     -- two circles overlapping
     if r1 and r2 then
 
-        return (obj2.x - obj1.x)^2 + (obj2.y - obj1.y)^2 < (r1 + r2)^2
+        return dist(obj1, obj2) < r1+r2
+        -- log(dist(obj1, obj2))
 
     -- one circle, one rect overlapping
+    -- todo: make this real! right now it just checks against corners
     elseif r1 or r2 then
 
         local r = r1 or r2
         local circle = r1 and obj1 or obj2
         local rectangle = r1 and obj2 or obj1
 
-        local c_x, c_y = circle.x, circle.y
         local rect_l, rect_r, rect_t, rect_b = rectangle.x, rectangle.x + rectangle.w, rectangle.y, rectangle.y + rectangle.h
 
-        local overlap_l = r > dist2line(vec(c_x, c_y), vec(rect_l, rect_t), vec(rect_l, rect_b))
-        local overlap_r = r > dist2line(vec(c_x, c_y), vec(rect_r, rect_t), vec(rect_r, rect_b))
-        local overlap_t = r > dist2line(vec(c_x, c_y), vec(rect_l, rect_t), vec(rect_r, rect_t))
-        local overlap_b = r > dist2line(vec(c_x, c_y), vec(rect_l, rect_b), vec(rect_r, rect_b))
+        local overlap_tl = r > dist(circle, vec(rect_l, rect_t))
+        local overlap_tr = r > dist(circle, vec(rect_r, rect_t))
+        local overlap_bl = r > dist(circle, vec(rect_l, rect_b))
+        local overlap_br = r > dist(circle, vec(rect_r, rect_b))
 
-        local in_range = c_x + r > rect_l and c_x - r < rect_r and c_y + r > rect_t and c_y - r < rect_b
-
-        return in_range and (overlap_l or overlap_r or overlap_t or overlap_b)
+        return overlap_tl or overlap_tr or overlap_bl or overlap_br
 
     -- two rectangles overlapping
     else
@@ -586,6 +585,7 @@ sprite = {
         end
 
         -- flash
+        -- todo: refactor
         if self.flash_count > -1 and self.flashes < self.flash_count then
             if not(self.flashing) then
 
@@ -647,14 +647,14 @@ patrol = {
     direction = 'going',
 
     set = function(self, start, target, duration, step, fixed)
-        self.start, self.target, self.duration, self.step, self.fixed, self.direction = start, target, duration, step, fixed, 'going'
+        self.start, self.target, self.duration, self.step, self.fixed, self.returning = start, target, duration, step, fixed, false
     end,
 
     flip = function(self, parent)
 
         -- turn around
-        self.direction = self.direction == 'going' and 'coming' or 'going'
-        parent.sprite.flipped = self.direction == 'coming'
+        self.returning = not(self.returning)
+        parent.sprite.flipped = self.returning
 
         -- remain in patrol area if fixed, otherwaise restart tick
         self.tick = self.fixed and self.duration - self.tick or 0
@@ -678,19 +678,15 @@ patrol = {
             local distance_chunk = abs(self.target.x - self.start.x) / time_chunk
 
             -- calculate velocity
-            if parent.grounded and self.direction == 'coming' then
-                parent.velocity.x = distance_chunk
-            elseif parent.grounded and self.direction == 'going' then
-                parent.velocity.x = -distance_chunk
-            end
+            if (parent.grounded) parent.velocity.x = self.returning and distance_chunk or -distance_chunk
 
             -- set sprite direction
-            parent.sprite.flipped = self.direction == 'coming'
+            parent.sprite.flipped = self.returning
 
             -- reverse when reaching end
-            if (self.tick >= self.duration) then
+            if self.tick >= self.duration then
                 self.tick = 0
-                self.direction = self.direction == 'going' and 'coming' or 'going'
+                self.returning = not(self.returning)
             end
 
         end
@@ -701,7 +697,7 @@ patrol = {
 -- actor helpers
 -- =======================================================
 
-local actors, to_remove, update_pool, stages = {}, {}, {}, split'early_update, update, late_update, fixed_update, early_draw, draw'
+local actors, to_remove, update_pool, stages, update_id = {}, {}, {}, split'early_update, update, late_update, fixed_update, early_draw, draw', 1
 
 function reset_update_pool()
 	update_pool = {}
@@ -713,19 +709,24 @@ function reset_update_pool()
 	end
 end
 
-local update_id = 1
-
 function register(actor, parent)
     parent = parent or actor
 
 	for stage in all(stages) do
 		if actor[stage] then
+			local stage_pool = update_pool[stage]
+
+            -- save registration id on actor
 			if (not(actor.update_ids)) actor.update_ids = {}
 			actor.update_ids[stage..'_id'] = update_id
+
+            -- save actor and reference to parent to update pools
 			local registrant = {actor, parent}
-            add(update_pool[stage].array, registrant)
-            update_pool[stage].lookup[''..update_id] = registrant
+            add(stage_pool.array, registrant)
+            stage_pool.lookup[''..update_id] = registrant
+
             update_id += 1
+
         end
 	end
 end
@@ -776,7 +777,7 @@ function remove_actor(actor)
 	end
 
     del(actors, actor)
-    if (actor.collider) del(colliders, colliders[actor.collider.chunk][''..actor.id])
+    if (actor.collider) colliders[actor.collider.chunk][''..actor.id] = nil
 end
 
 
@@ -797,6 +798,7 @@ end
 function compos_update()
 
 	-- reset logs and limit permalogs
+    -- remove for prod
 	logs, new_permalogs = {}, {}
 	for i = 1, 15 do
 		log(permalogs[i])
@@ -809,9 +811,13 @@ function compos_update()
 
 		-- only loop over (nearly) visible actors
 		if cam.x and actor.x and not(actor.fixed) then
-			actor.in_frame = actor.x + actor.w >= cam.x - win_w * 0.1 and actor.x <= cam.x + win_w * 1.1 and actor.y + actor.h >= cam.y - win_h * 0.1 and actor.y <= cam.y + win_h * 1.1
+			actor.in_frame = actor.x + actor.w >= cam.x - win_w * 0.1
+                and actor.x <= cam.x + win_w * 1.1
+                and actor.y + actor.h >= cam.y - win_h * 0.1
+                and actor.y <= cam.y + win_h * 1.1
 		end
 
+        -- state machines
 		if actor.in_frame then
 
 			-- create state machines if needed
@@ -938,19 +944,25 @@ local blob = {
 }
 
 -- "split" is a handy method for reducing lengthy objects into 2-token function calls
-local blob_colors = split'0, 1, 2, 13, 6'
+local blob_colors = split'1, 2, 13, 6'
 
 -- add these objects to the list of actors
-local blob_count = 249
+-- local blob_count = 249
+local blob_count = 250
+
 for i = 1, blob_count do
-    -- assign a color based on depth
+
+    -- assign colors based on depth
     local color_index = ceil((i / blob_count) * (#blob_colors))
     blob.color = blob_colors[color_index]
     blob.outline = blob_colors[max(1, color_index - 1)]
+
+    -- add blob to actors
     add(actors, copy(blob))
+
 end
 
--- make a special red blob with collision
+-- make a special blob with collision
 local collider_blob = copy(blob)
 collider_blob.sprite = copy(sprite)
 collider_blob.init = function(self)
@@ -963,10 +975,25 @@ collider_blob.init = function(self)
     self.outline = 0
     self.sprite:animate(self, split'0, 2, 0, 4', 1, true)
 end
+
 -- you can also register for special update stages
 -- options are early_upate, late_update, and fixed_update (or early_draw!)
 collider_blob.late_update = function(self)
+
+    -- flip sprite based on direction
     self.sprite.flipped = self.velocity.x < 0
+
+    -- controls!
+    local push = 0.3
+    if btn'0' then
+        self.velocity:accelerate(-push, 0)
+    elseif btn'1' then
+        self.velocity:accelerate(push, 0)
+    elseif btn'2' then
+        self.velocity:accelerate(0, -push)
+    elseif btn'3' then
+        self.velocity:accelerate(0, push)
+    end
 end
 
 -- if an actor has a "collision" function, it will check for collisions with other colliders every frame
@@ -1001,39 +1028,48 @@ collider_blob.collision = function(self, newvec, other)
     return newvec
 end
 
+-- add to compos actors
 add(actors, collider_blob)
 
 -- not all actors need compos!
 local title_text = {
     update = function(self)
         self.y = 64 + sin(time()) * 8
-
-        -- debugging: log out the y to see where the text is
-        -- log(self.y)
     end,
     draw = function(self)
         local message = 'compos!'
         outline_print(message, 64 - #message * 2, self.y, 7, 8)
     end
 }
-add(actors, title_text)
 
 -- pico8 lifecycle functions
 -- call compos_* functions or add other scene logic
 function _init()
+
+    -- init runs on all objects currently within "actors"
     compos_init()
+
+    -- you can add actors after compost_init with add_actor
+    add_actor(title_text)
+
 end
 
 function _update()
+
     compos_update()
 
-    -- log out performance
-    log('actors: '..blob_count+1)
+    -- debugging example; log out number of actors
+    -- this could also go in any actors update function
+    log('actors: '..#actors)
+
 end
 
 function _draw()
+
+    -- compos doesn't clear screen, that's up to you!
     cls()
     compos_draw()
+
 end
 
 __gfx__
