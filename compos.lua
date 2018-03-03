@@ -128,11 +128,11 @@ end
 
 function outline_rect(x, y, x2, y2, fill, outline)
     outline = outline or 0
-    line(x, y, x2, y, outline)
-    line(x2, y, x2, y2, outline)
-    line(x2, y2, x, y2, outline)
-    line(x, y2, x, y, outline)
-    rectfill(x + 1, y + 1, x2 - 1, y2 - 1, fill)
+    line(x, y-1, x2, y-1, outline)
+    line(x2+1, y, x2+1, y2, outline)
+    line(x2, y2+1, x, y2+1, outline)
+    line(x-1, y2, x-1, y, outline)
+    rectfill(x, y, x2, y2, fill)
 end
 
 function outline_circ(x, y, r, fill, outline)
