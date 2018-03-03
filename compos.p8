@@ -209,8 +209,12 @@ end
 -- =======================================================
 
 function resize(thing, w, h)
-	thing.w = w
-	thing.h = h
+    if h then
+        thing.w = w
+        thing.h = h
+    else
+        thing.r, thing.w, thing.h = w, w, w
+    end
 end
 
 --
@@ -360,21 +364,59 @@ function collision_direction(col1, col2, flipped)
     end
 end
 
+function dist2line(r,a,b)
+    local dx=b.x-a.x
+    local dy=b.y-a.y
+    local d=sqrt(dx*dx+dy*dy)
+    return abs(dx*(a.y-r.y)-dy*(a.x-r.x))/d
+end
+
+function overlapping(obj1, obj2)
+    local is_overlapping
+    local r1, r2 = obj1.r, obj2.r
+
+    -- two circles overlapping
+    if r1 and r2 then
+
+        return (obj2.x - obj1.x)^2 + (obj2.y - obj1.y)^2 < (r1 + r2)^2
+
+    -- one circle, one rect overlapping
+    elseif r1 or r2 then
+
+        local r = r1 or r2
+        local circle = r1 and obj1 or obj2
+        local rectangle = r1 and obj2 or obj1
+
+        local c_x, c_y = circle.x, circle.y
+        local rect_l, rect_r, rect_t, rect_b = rectangle.x, rectangle.x + rectangle.w, rectangle.y, rectangle.y + rectangle.h
+
+        local overlap_l = r > dist2line(vec(c_x, c_y), vec(rect_l, rect_t), vec(rect_l, rect_b))
+        local overlap_r = r > dist2line(vec(c_x, c_y), vec(rect_r, rect_t), vec(rect_r, rect_b))
+        local overlap_t = r > dist2line(vec(c_x, c_y), vec(rect_l, rect_t), vec(rect_r, rect_t))
+        local overlap_b = r > dist2line(vec(c_x, c_y), vec(rect_l, rect_b), vec(rect_r, rect_b))
+
+        local in_range = c_x + r > rect_l and c_x - r < rect_r and c_y + r > rect_t and c_y - r < rect_b
+
+        return in_range and (overlap_l or overlap_r or overlap_t or overlap_b)
+
+    -- two rectangles overlapping
+    else
+
+        local x = obj1.x + obj1.w >= obj2.x and obj1.x <= obj2.x + obj2.w
+        local y = obj1.y + obj1.h >= obj2.y and obj1.y <= obj2.y + obj2.h
+        return x and y
+
+    end
+
+    return false
+end
+
 collider_id = 0
 colliders = { fixed = {} }
 collider = {
     physical = true,
     offset = vec(0, 0),
-    set = function(self, parent, offset, w, h, fixed)
-
-        -- set size and offset from parent
-        self.offset = offset or vec(0, 0)
-        self.w = w or parent.w
-        self.h = h or parent.h
-
-        -- set position
-        self.x = parent.x + self.offset.x
-        self.y = parent.y + self.offset.y
+    set = function(self, parent, offset, fixed, w, h)
 
         parent.id = collider_id
         collider_id += 1
@@ -383,6 +425,20 @@ collider = {
 		self.chunk = fixed and 'fixed' or ''..flr(self.x / win_w)
 		if (not(colliders[self.chunk])) colliders[self.chunk] = {}
         colliders[self.chunk][''..collider_id] = { self, parent }
+
+        -- set size and offset from parent
+        self.offset = offset or vec(0, 0)
+        self.x = parent.x + self.offset.x
+        self.y = parent.y + self.offset.y
+
+        -- set dimensions
+        if parent.r then
+            local r = w or parent.r
+            self.r, self.w, self.h = r, r, r
+        else
+            self.w = w or parent.w
+            self.h = h or parent.h
+        end
 
     end,
 	move = function(self, newvec)
@@ -393,16 +449,9 @@ collider = {
 
 		-- only continue if this isn't the parent collider
 		if other and other.id ~= parent.id then
-			local parent_col, other_col = parent.collider, other.collider
-
-			local overlap_x = (parent_col.x + parent_col.w >= other_col.x)
-				and (parent_col.x <= other_col.x + other_col.w)
-
-			local overlap_y = (parent_col.y + parent_col.h >= other_col.y)
-				and (parent_col.y <= other_col.y + other_col.h)
 
 			-- only take action if colliders overlap
-			if overlap_x and overlap_y then
+			if overlapping(parent.collider, other.collider) then
 				if (parent.velocity) then
 
 					-- run gravity collision with objects below
@@ -455,7 +504,13 @@ collider = {
     end,
 
     draw = function(self, parent)
-        if (show_colliders) rect(self.x, self.y, self.x + self.w, self.y + self.h, 11)
+        if show_colliders then
+            if self.r then
+                circ(self.x, self.y, self.r, 11)
+            else
+                rect(self.x, self.y, self.x + self.w, self.y + self.h, 11)
+            end
+        end
     end
 }
 
@@ -843,44 +898,46 @@ local blob = {
         translate(self, rnd'128', 64)
 
         -- make a circle or a rect
-        self.circle = flr(rnd'2') > 0
-        if self.circle then
-            self.r = rnd'8'
+        if flr(rnd'6') > 3 then
+            resize(self, flr(rnd'8'+4))
         else
-            resize(self, flr(rnd'14'+2), flr(rnd'14'+2))
-            self.collider:set(self)
+            resize(self, flr(rnd'8'+4), flr(rnd'8'+4))
         end
 
+        self.collider:set(self)
+
         -- randomize the gravity on this object specifically
-        self.gravity:set(rnd'3' / 2)
+        self.gravity:set(max('0.025', rnd'0.05'))
 
         -- randomize inititial velocity and cap
-        self.velocity:set(0,rnd'10'-5)
-        self.velocity:cap(15,15)
+        self.velocity:set(0,rnd'2'-1)
+        self.velocity:cap(2,2)
 
     end,
     update = function(self)
 
+        local r = self.r or 0
+
         -- reverse velocity if beyond window bounds
         if self.y + self.h > win_h then
             translate(self, self.x, win_h - self.h)
-            self.velocity.y = -6
-        elseif self.y < win_t then
-            translate(self, self.x, win_t)
+            self.velocity.y = -4
+        elseif self.y - r < win_t then
+            translate(self, self.x, win_t + r)
             self.velocity.y = 0
         end
-        if self.x < win_l then
-            translate(self, win_l, self.y)
-            self.velocity.x = 1 + rnd'1'
+        if self.x - r < win_l then
+            translate(self, win_l + r, self.y)
+            self.velocity.x = rnd'2'+1
         elseif self.x + self.w > win_r then
             translate(self, win_r - self.w, self.y)
-            self.velocity.x = -1 - rnd'1'
+            self.velocity.x = -(rnd'2'+1)
         end
 
     end,
     draw = function(self)
         -- draw the shape during the draw function
-        if self.circle then
+        if self.r then
             outline_circ(self.x, self.y, self.r, self.color, 6)
         else
             outline_rect(self.x, self.y, self.x + self.w, self.y + self.h, self.color, 6)
@@ -905,9 +962,9 @@ collider_blob.init = function(self)
     self.color = 7
     resize(self, 16, 16)
     translate(self, 56, 56)
-    self.velocity:set(2, 0)
+    self.velocity:set(1, 0)
     self.collider:set(self)
-    self.gravity:set'0.3'
+    self.gravity:set'0.1'
 end
 collider_blob.collision = function(self, newvec, other)
 
@@ -919,18 +976,19 @@ collider_blob.collision = function(self, newvec, other)
     -- this could be done better :/
     -- it's a demo, gimme a break!
     local bump_force_x, bump_force_y, x_bump, y_bump = self.velocity.x, self.velocity.y, other.velocity.x, other.velocity.y
+    local r = other.r or 0
     if direction == 'left' then
-        x_bump = min(bump_force_x, 0) - 2
+        x_bump = min(bump_force_x, 0) - 1
         other.velocity.newvec.x = newvec.x - other.w -- newvec is where the parent object will be at the ned of this frame
     elseif direction == 'right' then
-        x_bump = max(bump_force_x, 0) + 2
-        other.velocity.newvec.x = newvec.x + self.w
+        x_bump = max(bump_force_x, 0) + 1
+        other.velocity.newvec.x = newvec.x + self.w + r
     elseif direction == 'top' then
-        y_bump = min(bump_force_y) - 2
+        y_bump = min(bump_force_y) - 1
         other.velocity.newvec.y = newvec.y - other.h
     elseif direction == 'bottom' then
-        y_bump = max(bump_force_y) + 2
-        other.velocity.newvec.y = newvec.y + self.h
+        y_bump = max(bump_force_y) + 1
+        other.velocity.newvec.y = newvec.y + self.h + r
     end
 
     self.color = rnd'16'
