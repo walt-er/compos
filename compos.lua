@@ -1,5 +1,3 @@
--- use picotool's require() function to include this lua script
-
 -- =======================================================
 -- generic globals
 -- =======================================================
@@ -130,11 +128,11 @@ end
 
 function outline_rect(x, y, x2, y2, fill, outline)
     outline = outline or 0
-    line(x, y-1, x2, y-1, outline)
-    line(x2+1, y, x2+1, y2, outline)
-    line(x2, y2+1, x, y2+1, outline)
-    line(x-1, y2, x-1, y, outline)
-    rectfill(x, y, x2, y2, fill)
+    line(x, y, x2, y, outline)
+    line(x2, y, x2, y2, outline)
+    line(x2, y2, x, y2, outline)
+    line(x, y2, x, y, outline)
+    rectfill(x + 1, y + 1, x2 - 1, y2 - 1, fill)
 end
 
 function outline_circ(x, y, r, fill, outline)
@@ -659,7 +657,10 @@ local actors, to_remove, update_pool, stages = {}, {}, {}, split'early_update, u
 function reset_update_pool()
 	update_pool = {}
 	for stage in all(stages) do
-		update_pool[stage] = {}
+		update_pool[stage] = {
+			array = {},
+			lookup = {}
+		}
 	end
 end
 
@@ -670,12 +671,18 @@ function make_physical(thing)
 	thing.h = thing.h or tile
 end
 
+local update_id = 1
+
 function register(actor, parent)
     parent = parent or actor
+
 	for stage in all(stages) do
 		if actor[stage] then
-            add(update_pool[stage], {actor, parent})
-            actor.register_id = #update_pool[stage]
+			actor.update_id = update_id
+			local registrant = {actor, parent}
+            add(update_pool[stage].array, registrant)
+            update_pool[stage].lookup[''..update_id] = registrant
+            update_id += 1
         end
 	end
 end
@@ -683,11 +690,15 @@ end
 function unregister(actor)
 	for stage in all(stages) do
 		if actor[stage] then
-            idel(update_pool[stage], actor.register_id)
+			local stage_pool = update_pool[stage]
+			local registrant = stage_pool.lookup[''..actor.update_id]
+            del(stage_pool.array, registrant)
+            del(stage_pool.lookup, registrant)
         end
 	end
 end
 
+-- TODO: find memory leak in registration
 function init_actor(actor)
 	if (actor.physical) make_physical(actor)
     register(actor)
@@ -714,15 +725,14 @@ end
 function remove_actor(actor)
     del(actors, actor)
     unregister(actor)
+
 	for k, compo in pairs(actor) do
 		if type(compo) == 'table' then
 			unregister(compo)
 		end
 	end
-    if (actor.collider) then
-        colliders[actor.collider.chunk][''..actor.id] = nil
-        del(colliders, nil)
-    end
+
+    if (actor.collider) del(colliders, colliders[actor.collider.chunk][''..actor.id])
 end
 
 
@@ -755,7 +765,7 @@ function compos_update()
 
 		-- only loop over (nearly) visible actors
 		if cam.x and actor.x and not(actor.fixed) then
-			actor.in_frame = actor.x >= cam.x - win_w * 0.1 and actor.x <= cam.x + win_w * 1.1 and actor.y >= cam.y - win_h * 0.1 and actor.y <= cam.y + win_h * 1.1
+			actor.in_frame = actor.x + actor.w >= cam.x - win_w * 0.1 and actor.x <= cam.x + win_w * 1.1 and actor.y + actor.h >= cam.y - win_h * 0.1 and actor.y <= cam.y + win_h * 1.1
 		end
 
 		if actor.in_frame then
@@ -776,7 +786,7 @@ function compos_update()
 	-- run updates on actors and props that have registered to update
 	for i = 1, #stages - 1 do -- don't include draw stages
 		local stage = stages[i]
-		for k, actor in pairs(update_pool[stage]) do
+		for k, actor in pairs(update_pool[stage].array) do
 			if (actor[2].in_frame ~= false) actor[1][stage](actor[1], actor[2])
 		end
 	end
@@ -796,7 +806,7 @@ function compos_draw()
 	-- run draw on actors and props that have registered to draw
 	for i = #stages - 1, #stages do -- only include draw stages
 		local stage = stages[i]
-		for k, actor in pairs(update_pool[stage]) do
+		for k, actor in pairs(update_pool[stage].array) do
 			if (actor[2].in_frame ~= false) actor[1][stage](actor[1], actor[2])
 		end
 	end
