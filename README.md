@@ -2,6 +2,8 @@
 
 compos: like "components", but with fewer characters!
 
+BBS thread: https://www.lexaloffle.com/bbs/?tid=30886
+
 compos are independent, reusable objects that can be added to your game's actors to give them certain behaviors. compos manage their own state, initialization, updating, and drawing. The only thing you might need to do is set some intitial values.
 
 There's a fair amount of overhead for defining so many components right out of the gate. But hopefully the savings come down the line: it's easy to attach behaviors to actors independently, so defining large numbers of actors with similar behaviors is simple and doesn't require messy class inheritance. This system is build with procedural generation in mind -- it's easy to spawn complex actors on the fly, mixing and matching qualities without spending tokens.
