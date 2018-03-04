@@ -80,7 +80,7 @@ You could also just hack the compo.p8 cart, using that as a jumping off point!
 
 Here's some code that uses compos to draw hundreds of actors with positions, sizes, colors, and gravity:
 
-![Compos in action](compos.gif)
+![Compos in action](bouncing-blobs.gif)
 
 ```lua
 -- make actors as objects
