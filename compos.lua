@@ -1,3 +1,5 @@
+-- use picotool's require() function to include this lua script
+
 -- =======================================================
 -- generic globals
 -- =======================================================
@@ -64,7 +66,7 @@ end
 -- debugging helpers (remove for prod)
 -- =======================================================
 
-logs, permalogs, show_colliders, log_states, log_statuses = {}, {}, false, false, false
+logs, permalogs, show_colliders, show_stats, log_states, log_statuses = {}, {}, false, true, false, false
 
 function reverse(table)
     for i=1, flr(#table / 2) do
@@ -107,7 +109,7 @@ end
 -- drawing helpers
 -- =======================================================
 
-local transparent = 11
+local transparent = 11 -- change this to whatever color you use as transparent in your sprites
 function set_transparent_colors()
 	pal()
     palt(0, false)
@@ -128,19 +130,18 @@ end
 
 function outline_rect(x, y, x2, y2, fill, outline)
     outline = outline or 0
-    line(x, y-1, x2, y-1, outline)
-    line(x2+1, y, x2+1, y2, outline)
-    line(x2, y2+1, x, y2+1, outline)
-    line(x-1, y2, x-1, y, outline)
+    rectfill(x, y-1, x2, y2+1, outline)
+    rectfill(x-1, y, x2+1, y2, outline)
     rectfill(x, y, x2, y2, fill)
 end
 
 function outline_circ(x, y, r, fill, outline)
     outline = outline or 0
+    circfill(x,y,r+1,outline)
     circfill(x,y,r,fill)
-    circ(x,y,r,outline)
 end
 
+-- zoom a sprite to fill an area
 function zspr(n, dx, dy, w, h, flip_x, flip_y, dz)
 	if not(dz) or dz==1 then
 		spr(n,dx,dy,w,h,flip_x,flip_y)
@@ -151,13 +152,9 @@ function zspr(n, dx, dy, w, h, flip_x, flip_y, dz)
     end
 end
 
-function offset_spr(offset_x, offset_y, id, x, y, w, h, flip_x, flip_y, zoom)
-    zspr(id, x + offset_x, y + offset_y, w, h, flip_x, flip_y, zoom)
-end
-
 function outline_spr(id, x, y, w, h, outline, fill, flip_x, flip_y, zoom)
 
-	-- change all colors to outline
+	-- change all colors to outline color
     outline = outline or 0
     for i=1, 15 do
         if (i ~= transparent) pal(i, outline)
@@ -167,13 +164,14 @@ function outline_spr(id, x, y, w, h, outline, fill, flip_x, flip_y, zoom)
     for i = -1, 1 do
         for j = -1, 1 do
             if not(abs(i) == abs(j)) then
-                offset_spr(i, j, id, x, y, w, h, flip_x, flip_y, zoom)
+                zspr(id, x+i, y+j, w, h, flip_x, flip_y, zoom)
             end
         end
     end
 
-    -- fill sprite or draw full color sprite
+    -- fill sprite or draw full color sprite on top of outline
     if fill then
+        -- change all colors to fill color
         for i=0, 15 do
             if (i ~= transparent) pal(i, fill)
         end
@@ -203,16 +201,21 @@ end
 -- =======================================================
 -- =======================================================
 
-function resize(thing, w, h)
-	thing.w = w
-	thing.h = h
+-- functions for "physical" objects
+function make_physical(thing)
+	thing.x, thing.y, thing.w, thing.h = thing.x or 0, thing.y or 0, thing.w or tile, thing.h or tile
 end
 
---
+function resize(thing, w, h)
+    if h then
+        thing.w, thing.h = w, h
+    else
+        thing.r, thing.w, thing.h = w, w, w
+    end
+end
 
 function translate(thing, x, y)
-	thing.x = x
-	thing.y = y
+	thing.x, thing.y = x, y
 end
 
 --
@@ -221,16 +224,14 @@ health = {
     total = -999,
     max = 0,
     set = function(self, new_health)
-        self.max = max(0, new_health)
-        self.total = max(0, new_health)
+        self.max, self.total = max(0, new_health), max(0, new_health)
     end,
     damage = function(self, damage)
-        self.total = self.total - damage
-        self.damage_time = time()
+        self.total, self.damage_time = self.total - damage, time()
     end,
     update = function(self, parent)
 
-        -- store life as flag on parent
+        -- store life as flag on parent, call death function
         parent.alive = self.total > 0
 		if (self.total ~= -999 and not(parent.alive) and parent.die) parent:die()
 
@@ -247,7 +248,7 @@ health = {
             -- get end x for fill representing remaining health
             local fill_end_x = start_x + flr((end_x - start_x) * (self.total / self.max))
 
-            -- draw
+            -- draw health bar
             outline_rect(start_x, start_y, end_x, end_y, 6, 1)
             line(start_x, end_y, end_x, end_y, 13)
             outline_rect(start_x, start_y, fill_end_x, end_y, 8)
@@ -274,7 +275,8 @@ end
 
 function throw(actor, newvec, distance)
 	distance = distance or 2
-	local throwvec = vec(player.flip_x * distance, -distance)
+    local flip = player.flip_x or 1
+	local throwvec = vec(flip * distance, -distance)
 	actor.velocity:set(throwvec.x, throwvec.y)
 	actor.thrown = true
 	return vec(newvec.x + throwvec.x, newvec.y + throwvec.y)
@@ -290,8 +292,7 @@ velocity = {
     decay = vec(1, 1),
     newvec = vec(0, 0),
     set = function(self, x, y, decay)
-        self.x = x
-        self.y = y
+        self.x, self.y = x, y
         if (decay) self.decay = decay
     end,
     accelerate = function(self, x_acceleration, y_acceleration)
@@ -299,13 +300,11 @@ velocity = {
         self.y += y_acceleration
     end,
     cap = function(self, x, y)
-        self.max_x = x
-        self.max_y = y
+        self.max_x, self.max_y = x, y
     end,
     update = function(self, parent)
 
-        self.x = mid(self.x, -self.max_x, self.max_x)
-        self.y = mid(self.y, -self.max_y, self.max_y)
+        self.x, self.y = mid(self.x, -self.max_x, self.max_x), mid(self.y, -self.max_y, self.max_y)
 
         -- get new set of coordinates using current velocity (don't apply yet)
         self.newvec = vec(parent.x + self.x, parent.y + self.y)
@@ -326,14 +325,11 @@ velocity = {
     end
 }
 
--- TODO: refactor
+-- todo: refactor
 function collision_direction(col1, col2, flipped)
     local direction = ''
 
-    local left_overlap = col1.x > col2.x + col2.w - 1
-    local right_overlap = col1.x + col1.w - 1 <= col2.x
-    local bottom_overlap = col1.y + col1.h - 1 <= col2.y
-    local top_overlap = col1.y >= col2.y + col2.h - 1
+    local left_overlap, right_overlap, bottom_overlap, top_overlap = col1.x > col2.x + col2.w - 1, col1.x + col1.w - 1 <= col2.x, col1.y + col1.h - 1 <= col2.y, col1.y >= col2.y + col2.h - 1
 
     if right_overlap or (flipped and left_overlap) then
         direction = 'right'
@@ -347,12 +343,58 @@ function collision_direction(col1, col2, flipped)
 
     -- if no direction, retry with smaller colliders
     if direction == '' and col1.w > 2 and col1.h > 2 and col2.w > 2 and col2.h > 2 then
-		local new_col1 = obj(col1.x + 1, col1.y + 1, col1.w - 2, col1.h - 2)
-		local new_col2 = obj(col2.x + 1, col2.y + 1, col2.w - 2, col2.h - 2)
+		local new_col1, new_col2 = obj(col1.x + 1, col1.y + 1, col1.w - 2, col1.h - 2), obj(col2.x + 1, col2.y + 1, col2.w - 2, col2.h - 2)
         return collision_direction(new_col1, new_col2, flipped)
     else
         return direction
     end
+end
+
+-- distance between two points
+-- by clowerweb
+-- https://github.com/clowerweb/Lib-Pico8/blob/master/distance.lua
+function dist(obj1, obj2)
+    return abs(sqrt((obj1.x-obj2.x)^2+(obj1.y-obj2.y)^2))
+end
+
+-- based in part on work by bridgs
+-- https://github.com/bridgs/trans-gal-jam
+function overlapping(obj1, obj2)
+    local r1, r2 = obj1.r, obj2.r
+
+    -- two circles overlapping
+    if r1 and r2 then
+
+        return dist(obj1, obj2) < r1+r2
+        -- log(dist(obj1, obj2))
+
+    -- one circle, one rect overlapping
+    -- todo: make this real! right now it just checks against corners
+    elseif r1 or r2 then
+
+        local r = r1 or r2
+        local circle = r1 and obj1 or obj2
+        local rectangle = r1 and obj2 or obj1
+
+        local rect_l, rect_r, rect_t, rect_b = rectangle.x, rectangle.x + rectangle.w, rectangle.y, rectangle.y + rectangle.h
+
+        local overlap_tl = r > dist(circle, vec(rect_l, rect_t))
+        local overlap_tr = r > dist(circle, vec(rect_r, rect_t))
+        local overlap_bl = r > dist(circle, vec(rect_l, rect_b))
+        local overlap_br = r > dist(circle, vec(rect_r, rect_b))
+
+        return overlap_tl or overlap_tr or overlap_bl or overlap_br
+
+    -- two rectangles overlapping
+    else
+
+        local x = obj1.x + obj1.w >= obj2.x and obj1.x <= obj2.x + obj2.w
+        local y = obj1.y + obj1.h >= obj2.y and obj1.y <= obj2.y + obj2.h
+        return x and y
+
+    end
+
+    return false
 end
 
 collider_id = 0
@@ -360,24 +402,28 @@ colliders = { fixed = {} }
 collider = {
     physical = true,
     offset = vec(0, 0),
-    set = function(self, parent, offset, w, h, fixed)
+    set = function(self, parent, offset, fixed, w, h)
 
         -- set size and offset from parent
         self.offset = offset or vec(0, 0)
-        self.w = w or parent.w
-        self.h = h or parent.h
-
-        -- set position
         self.x = parent.x + self.offset.x
         self.y = parent.y + self.offset.y
 
+        -- add to array of colliders
         parent.id = collider_id
         collider_id += 1
-
-        -- add to array of colliders
 		self.chunk = fixed and 'fixed' or ''..flr(self.x / win_w)
 		if (not(colliders[self.chunk])) colliders[self.chunk] = {}
         colliders[self.chunk][''..collider_id] = { self, parent }
+
+        -- set dimensions
+        if parent.r then
+            local r = w or parent.r
+            self.r, self.w, self.h = r, r, r
+        else
+            self.w = w or parent.w
+            self.h = h or parent.h
+        end
 
     end,
 	move = function(self, newvec)
@@ -388,16 +434,9 @@ collider = {
 
 		-- only continue if this isn't the parent collider
 		if other and other.id ~= parent.id then
-			local parent_col, other_col = parent.collider, other.collider
-
-			local overlap_x = (parent_col.x + parent_col.w >= other_col.x)
-				and (parent_col.x <= other_col.x + other_col.w)
-
-			local overlap_y = (parent_col.y + parent_col.h >= other_col.y)
-				and (parent_col.y <= other_col.y + other_col.h)
 
 			-- only take action if colliders overlap
-			if overlap_x and overlap_y then
+			if overlapping(parent.collider, other.collider) then
 				if (parent.velocity) then
 
 					-- run gravity collision with objects below
@@ -450,7 +489,13 @@ collider = {
     end,
 
     draw = function(self, parent)
-        if (show_colliders) rect(self.x, self.y, self.x + self.w, self.y + self.h, 11)
+        if show_colliders then
+            if self.r then
+                circ(self.x, self.y, self.r, 11)
+            else
+                rect(self.x, self.y, self.x + self.w, self.y + self.h, 11)
+            end
+        end
     end
 }
 
@@ -537,6 +582,7 @@ sprite = {
         end
 
         -- flash
+        -- todo: refactor
         if self.flash_count > -1 and self.flashes < self.flash_count then
             if not(self.flashing) then
 
@@ -598,14 +644,14 @@ patrol = {
     direction = 'going',
 
     set = function(self, start, target, duration, step, fixed)
-        self.start, self.target, self.duration, self.step, self.fixed, self.direction = start, target, duration, step, fixed, 'going'
+        self.start, self.target, self.duration, self.step, self.fixed, self.returning = start, target, duration, step, fixed, false
     end,
 
     flip = function(self, parent)
 
         -- turn around
-        self.direction = self.direction == 'going' and 'coming' or 'going'
-        parent.sprite.flipped = self.direction == 'coming'
+        self.returning = not(self.returning)
+        parent.sprite.flipped = self.returning
 
         -- remain in patrol area if fixed, otherwaise restart tick
         self.tick = self.fixed and self.duration - self.tick or 0
@@ -629,19 +675,15 @@ patrol = {
             local distance_chunk = abs(self.target.x - self.start.x) / time_chunk
 
             -- calculate velocity
-            if parent.grounded and self.direction == 'coming' then
-                parent.velocity.x = distance_chunk
-            elseif parent.grounded and self.direction == 'going' then
-                parent.velocity.x = -distance_chunk
-            end
+            if (parent.grounded) parent.velocity.x = self.returning and distance_chunk or -distance_chunk
 
             -- set sprite direction
-            parent.sprite.flipped = self.direction == 'coming'
+            parent.sprite.flipped = self.returning
 
             -- reverse when reaching end
-            if (self.tick >= self.duration) then
+            if self.tick >= self.duration then
                 self.tick = 0
-                self.direction = self.direction == 'going' and 'coming' or 'going'
+                self.returning = not(self.returning)
             end
 
         end
@@ -652,7 +694,7 @@ patrol = {
 -- actor helpers
 -- =======================================================
 
-local actors, to_remove, update_pool, stages = {}, {}, {}, split'early_update, update, late_update, fixed_update, early_draw, draw'
+local actors, to_remove, update_pool, stages, update_id = {}, {}, {}, split'early_update, update, late_update, fixed_update, early_draw, draw', 1
 
 function reset_update_pool()
 	update_pool = {}
@@ -664,25 +706,24 @@ function reset_update_pool()
 	end
 end
 
-function make_physical(thing)
-	thing.x = thing.x or 0
-	thing.y = thing.y or 0
-	thing.w = thing.w or tile
-	thing.h = thing.h or tile
-end
-
-local update_id = 1
-
 function register(actor, parent)
     parent = parent or actor
 
 	for stage in all(stages) do
 		if actor[stage] then
-			actor.update_id = update_id
+			local stage_pool = update_pool[stage]
+
+            -- save registration id on actor
+			if (not(actor.update_ids)) actor.update_ids = {}
+			actor.update_ids[stage..'_id'] = update_id
+
+            -- save actor and reference to parent to update pools
 			local registrant = {actor, parent}
-            add(update_pool[stage].array, registrant)
-            update_pool[stage].lookup[''..update_id] = registrant
+            add(stage_pool.array, registrant)
+            stage_pool.lookup[''..update_id] = registrant
+
             update_id += 1
+
         end
 	end
 end
@@ -691,14 +732,15 @@ function unregister(actor)
 	for stage in all(stages) do
 		if actor[stage] then
 			local stage_pool = update_pool[stage]
-			local registrant = stage_pool.lookup[''..actor.update_id]
-            del(stage_pool.array, registrant)
-            del(stage_pool.lookup, registrant)
+			local id = ''..actor.update_ids[stage..'_id']
+			local registrant = stage_pool.lookup[id]
+			del(stage_pool.array, registrant)
+			stage_pool.lookup[id] = nil
         end
 	end
 end
 
--- TODO: find memory leak in registration
+-- todo: find memory leak in registration
 function init_actor(actor)
 	if (actor.physical) make_physical(actor)
     register(actor)
@@ -723,7 +765,6 @@ function add_actor(actor)
 end
 
 function remove_actor(actor)
-    del(actors, actor)
     unregister(actor)
 
 	for k, compo in pairs(actor) do
@@ -732,7 +773,8 @@ function remove_actor(actor)
 		end
 	end
 
-    if (actor.collider) del(colliders, colliders[actor.collider.chunk][''..actor.id])
+    del(actors, actor)
+    if (actor.collider) colliders[actor.collider.chunk][''..actor.id] = nil
 end
 
 
@@ -753,6 +795,7 @@ end
 function compos_update()
 
 	-- reset logs and limit permalogs
+    -- remove for prod
 	logs, new_permalogs = {}, {}
 	for i = 1, 15 do
 		log(permalogs[i])
@@ -765,9 +808,13 @@ function compos_update()
 
 		-- only loop over (nearly) visible actors
 		if cam.x and actor.x and not(actor.fixed) then
-			actor.in_frame = actor.x + actor.w >= cam.x - win_w * 0.1 and actor.x <= cam.x + win_w * 1.1 and actor.y + actor.h >= cam.y - win_h * 0.1 and actor.y <= cam.y + win_h * 1.1
+			actor.in_frame = actor.x + actor.w >= cam.x - win_w * 0.1
+                and actor.x <= cam.x + win_w * 1.1
+                and actor.y + actor.h >= cam.y - win_h * 0.1
+                and actor.y <= cam.y + win_h * 1.1
 		end
 
+        -- state machines
 		if actor.in_frame then
 
 			-- create state machines if needed
@@ -811,9 +858,17 @@ function compos_draw()
 		end
 	end
 
+    -- reset for logging
+    camera()
+
 	-- debug logs
 	for i = 1, #logs do
-        camera()
 		outline_print(logs[i], 5, 5 + ((i - 1) * tile), 7)
+	end
+
+	-- stats
+	if show_stats then
+		outline_print('mem: '..stat'0', 72, 5, 7)
+		outline_print('fps: '..stat'7', 72, 13, 7)
 	end
 end
