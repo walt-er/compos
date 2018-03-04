@@ -70,9 +70,9 @@ It's important to remove actors by using `remove_actor()`, as opposed to, say, `
 
 ## Integrating compos into your project
 
-The most direct way to integrate compos into your project is simply copy pasting all of compos.lua into your cart, then deleting unwanted components and functions
+The most direct way to integrate compos into your project is simply copy pasting all of compos.lua into your cart, then deleting unwanted components and functions. There are a lot of functions included here, and cherrypicking what you want will save a ton of tokens. You probably don't need it all!
 
-This can also be achieved using picotool, with some extra work. Just `require('compos.lua')` in your source pico8 file to include compos inside a "require" function. Just note that you'll need to delete the function wrapping the compo definitions for your code to reference them without errors. (NOTE: if you think I could get around this, let me know!)
+Integration can also be achieved using picotool, with some extra work. Just `require('compos.lua')` in your source pico8 file to include compos inside a "require" function. Just note that you'll need to delete the function wrapping the compo definitions for your code to reference them without errors. (NOTE: if you think I could get around this, let me know!)
 
 You could also just hack the compo.p8 cart, using that as a jumping off point!
 
@@ -80,7 +80,7 @@ You could also just hack the compo.p8 cart, using that as a jumping off point!
 
 Here's some code that uses compos to draw hundreds of actors with positions, sizes, colors, and gravity:
 
-![Compos in action](bouncing-blobs.gif)
+![Compos in action](compos-bouncing-blobs.gif)
 
 ```lua
 -- make actors as objects
