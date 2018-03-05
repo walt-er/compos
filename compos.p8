@@ -354,10 +354,10 @@ function collision_direction(col1, col2, flipped)
 end
 
 -- distance between two points
--- by clowerweb
--- https://github.com/clowerweb/Lib-Pico8/blob/master/distance.lua
-function dist(obj1, obj2)
-    return abs(sqrt((obj1.x-obj2.x)^2+(obj1.y-obj2.y)^2))
+-- by freds72
+-- https://www.lexaloffle.com/bbs/?pid=49926#p49926
+function sqrdist(obj1, obj2)
+    return (obj1.x-obj2.x)^2+(obj1.y-obj2.y)^2
 end
 
 -- based in part on work by bridgs
@@ -368,8 +368,7 @@ function overlapping(obj1, obj2)
     -- two circles overlapping
     if r1 and r2 then
 
-        return dist(obj1, obj2) < r1+r2
-        -- log(dist(obj1, obj2))
+        return sqrdist(obj1, obj2) < (r1+r2)^2
 
     -- one circle, one rect overlapping
     -- todo: make this real! right now it just checks against corners
@@ -381,10 +380,10 @@ function overlapping(obj1, obj2)
 
         local rect_l, rect_r, rect_t, rect_b = rectangle.x, rectangle.x + rectangle.w, rectangle.y, rectangle.y + rectangle.h
 
-        local overlap_tl = r > dist(circle, vec(rect_l, rect_t))
-        local overlap_tr = r > dist(circle, vec(rect_r, rect_t))
-        local overlap_bl = r > dist(circle, vec(rect_l, rect_b))
-        local overlap_br = r > dist(circle, vec(rect_r, rect_b))
+        local overlap_tl = r*r > sqrdist(circle, vec(rect_l, rect_t))
+        local overlap_tr = r*r > sqrdist(circle, vec(rect_r, rect_t))
+        local overlap_bl = r*r > sqrdist(circle, vec(rect_l, rect_b))
+        local overlap_br = r*r > sqrdist(circle, vec(rect_r, rect_b))
 
         return overlap_tl or overlap_tr or overlap_bl or overlap_br
 
