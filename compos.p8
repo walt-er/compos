@@ -7,7 +7,7 @@ __lua__
 -- generic globals
 -- =======================================================
 
-win_w, win_h, win_l, win_r, win_t, win_b, tile, cam, player, player_states = 128, 128, 0, 128, 0, 128, 8, {}, {}, {}
+compos, win_w, win_h, win_l, win_r, win_t, win_b, tile, cam, player, player_states = {}, 128, 128, 0, 128, 0, 128, 8, {}, {}, {}
 
 -- ======================================z=================
 -- helper functions
@@ -223,7 +223,7 @@ end
 
 --
 
-health = {
+compos.health = {
     total = -999,
     max = 0,
     set = function(self, new_health)
@@ -287,7 +287,7 @@ end
 
 --
 
-velocity = {
+compos.velocity = {
     x = 0,
     y = 0,
     max_x = 999,
@@ -311,6 +311,7 @@ velocity = {
 
         -- get new set of coordinates using current velocity (don't apply yet)
         self.newvec = vec(parent.x + self.x, parent.y + self.y)
+        -- plog(self.y)
 
         -- move collider if need be
         if (parent.collider) parent.collider:move(self.newvec)
@@ -401,7 +402,7 @@ end
 
 collider_id = 0
 colliders = { fixed = {} }
-collider = {
+compos.collider = {
     physical = true,
     offset = vec(0, 0),
     set = function(self, parent, offset, fixed, w, h)
@@ -427,6 +428,9 @@ collider = {
             self.h = h or parent.h
         end
 
+    end,
+    init = function(self, parent)
+        self:set(parent)
     end,
 	move = function(self, newvec)
         self.x = newvec.x + self.offset.x
@@ -503,13 +507,14 @@ collider = {
 
 --
 
-gravity = {
+compos.gravity = {
     force = 1,
     set = function(self, force)
         self.force = force
     end,
     early_update = function(self, parent)
         parent.velocity.y += self.force
+        -- plog(parent.velocity.y)
     end,
     trigger_grounding = function(self, parent, other, newvec)
 
@@ -526,7 +531,7 @@ gravity = {
 
 --
 
-sprite = {
+compos.sprite = {
 	id = 0,
     loop = false,
     zoom = 1,
@@ -622,7 +627,7 @@ sprite = {
 
 --
 
-age = {
+compos.age = {
     set = function(self, death)
         self.birth = time()
         self.death = death
@@ -636,14 +641,14 @@ age = {
 
 --
 
-patrol = {
+compos.patrol = {
     start = vec(0, 0),
     target = vec(0, 0),
     tick = 0,
     step = 0,
     duration = 0,
     fixed = false,
-    direction = 'going',
+    returning = false,
 
     set = function(self, start, target, duration, step, fixed)
         self.start, self.target, self.duration, self.step, self.fixed, self.returning = start, target, duration, step, fixed, false
@@ -744,21 +749,35 @@ end
 
 -- todo: find memory leak in registration
 function init_actor(actor)
+
+    -- give actor coordinates and size before initializing compos
 	if (actor.physical) make_physical(actor)
     register(actor)
 
-	for k, compo in pairs(actor) do
-		if type(compo) == 'table' then
-			if (compo.physical) make_physical(actor[k])
-			if (compo.init) actor[k]:init()
-			register(compo, actor)
-		end
+    -- register compos
+    local actor_copy = copy(actor)
+	for i = 1, #actor_copy do
+        if actor_copy[i] then
+            local compo_name = actor_copy[i]
+            local compo = compos[compo_name]
+
+            if compo then
+                actor[compo_name] = copy(compo)
+                if (compo.physical) make_physical(actor[compo_name])
+                if (compo.init) actor[compo_name]:init(actor)
+
+                register(compo, actor)
+                del(actor, compo_name)
+            end
+        end
 	end
 
+    -- init actor after compo init
     if (actor.init) actor:init()
 
 	-- default to 'in frame' for actors with no position
 	actor.in_frame = true
+
 end
 
 function add_actor(actor)
@@ -884,11 +903,12 @@ end
 -- set compo values insite of init
 -- include init(), update(), and draw() if this actor should have its own methods
 local blob = {
-    physical = true, -- this will add the properties x, y, w, and h (on compo init)
-    velocity = copy(velocity),
-    gravity = copy(gravity),
-    collider = copy(collider),
 
+    'velocity',
+    'gravity',
+    -- 'collider',
+
+    physical = true, -- this will add the properties x, y, w, and h (on compo init)
     init = function(self)
 
         -- move it to a random position
@@ -901,14 +921,12 @@ local blob = {
             resize(self, flr(rnd'8'+4), flr(rnd'8'+4))
         end
 
-        self.collider:set(self)
-
         -- randomize the gravity on this object specifically
         self.gravity:set(max('0.025', rnd'0.05'))
 
-        -- randomize inititial velocity and cap
-        self.velocity:set(0,rnd'2'-1, vec(0.95, 1))
-        self.velocity:cap(2,2)
+        -- -- randomize inititial velocity and cap
+        -- self.velocity:set(0,rnd'2'-1, vec(0.95, 1))
+        -- self.velocity:cap(2,2)
 
     end,
     update = function(self)
@@ -962,73 +980,75 @@ for i = 1, blob_count do
 end
 
 -- make a special blob with collision
-local collider_blob = copy(blob)
-collider_blob.sprite = copy(sprite)
-collider_blob.init = function(self)
-    self.color = 7
-    resize(self, 16, 16)
-    translate(self, 56, 56)
-    self.velocity:set(1, 0)
-    self.collider:set(self)
-    self.gravity:set'0.1'
-    self.outline = 0
-    self.sprite:animate(self, split'0, 2, 0, 4', 1, true)
-end
+-- local collider_blob = copy(blob)
 
--- you can also register for special update stages
--- options are early_upate, late_update, and fixed_update (or early_draw!)
-collider_blob.late_update = function(self)
+-- add(collider_blob, 'sprite')
 
-    -- flip sprite based on direction
-    self.sprite.flipped = self.velocity.x < 0
+-- collider_blob.init = function(self)
+--     self.color = 7
+--     resize(self, 16, 16)
+--     translate(self, 56, 56)
+--     self.velocity:set(1, 0)
+--     self.collider:set(self)
+--     self.gravity:set'0.1'
+--     self.outline = 0
+--     self.sprite:animate(self, split'0, 2, 0, 4', 1, true)
+-- end
 
-    -- controls!
-    local push = 0.3
-    if btn'0' then
-        self.velocity:accelerate(-push, 0)
-    elseif btn'1' then
-        self.velocity:accelerate(push, 0)
-    elseif btn'2' then
-        self.velocity:accelerate(0, -push)
-    elseif btn'3' then
-        self.velocity:accelerate(0, push)
-    end
-end
+-- -- you can also register for special update stages
+-- -- options are early_upate, late_update, and fixed_update (or early_draw!)
+-- collider_blob.late_update = function(self)
 
--- if an actor has a "collision" function, it will check for collisions with other colliders every frame
--- all actors can have colliders at little cost, but too many "collision" functions add up!
-collider_blob.collision = function(self, newvec, other)
+--     -- flip sprite based on direction
+--     self.sprite.flipped = self.velocity.x < 0
 
-    -- this function takes too colliders and returns the direction of collision
-    -- the direction returned (left, right, top, or bottom) is relative to the parent
-    local direction = collision_direction(self.collider, other.collider)
-    if (direction == '') direction = rnd'2' > 0 and 'left' or 'right'
+--     -- controls!
+--     local push = 0.3
+--     if btn'0' then
+--         self.velocity:accelerate(-push, 0)
+--     elseif btn'1' then
+--         self.velocity:accelerate(push, 0)
+--     elseif btn'2' then
+--         self.velocity:accelerate(0, -push)
+--     elseif btn'3' then
+--         self.velocity:accelerate(0, push)
+--     end
+-- end
 
-    -- this could be done better :/
-    -- it's a demo, gimme a break!
-    local bump_force_x, bump_force_y, x_bump, y_bump = self.velocity.x, self.velocity.y, other.velocity.x, other.velocity.y
-    local r = other.r or 0
-    if direction == 'left' then
-        x_bump = min(bump_force_x, 0) - 1
-        other.velocity.newvec.x = newvec.x - other.w -- newvec is where the parent object will be at the ned of this frame
-    elseif direction == 'right' then
-        x_bump = max(bump_force_x, 0) + 1
-        other.velocity.newvec.x = newvec.x + self.w + r
-    elseif direction == 'top' then
-        y_bump = min(bump_force_y) - 1
-        other.velocity.newvec.y = newvec.y - other.h
-    elseif direction == 'bottom' then
-        y_bump = max(bump_force_y) + 1
-        other.velocity.newvec.y = newvec.y + self.h + r
-    end
+-- -- if an actor has a "collision" function, it will check for collisions with other colliders every frame
+-- -- all actors can have colliders at little cost, but too many "collision" functions add up!
+-- collider_blob.collision = function(self, newvec, other)
 
-    other.velocity:set(x_bump, y_bump)
+--     -- this function takes too colliders and returns the direction of collision
+--     -- the direction returned (left, right, top, or bottom) is relative to the parent
+--     local direction = collision_direction(self.collider, other.collider)
+--     if (direction == '') direction = rnd'2' > 0 and 'left' or 'right'
 
-    return newvec
-end
+--     -- this could be done better :/
+--     -- it's a demo, gimme a break!
+--     local bump_force_x, bump_force_y, x_bump, y_bump = self.velocity.x, self.velocity.y, other.velocity.x, other.velocity.y
+--     local r = other.r or 0
+--     if direction == 'left' then
+--         x_bump = min(bump_force_x, 0) - 1
+--         other.velocity.newvec.x = newvec.x - other.w -- newvec is where the parent object will be at the ned of this frame
+--     elseif direction == 'right' then
+--         x_bump = max(bump_force_x, 0) + 1
+--         other.velocity.newvec.x = newvec.x + self.w + r
+--     elseif direction == 'top' then
+--         y_bump = min(bump_force_y) - 1
+--         other.velocity.newvec.y = newvec.y - other.h
+--     elseif direction == 'bottom' then
+--         y_bump = max(bump_force_y) + 1
+--         other.velocity.newvec.y = newvec.y + self.h + r
+--     end
 
--- add to compos actors
-add(actors, collider_blob)
+--     other.velocity:set(x_bump, y_bump)
+
+--     return newvec
+-- end
+
+-- -- add to compos actors
+-- add(actors, collider_blob)
 
 -- not all actors need compos!
 local title_text = {
