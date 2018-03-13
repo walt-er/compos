@@ -210,6 +210,95 @@ end
 
 
 -- =======================================================
+-- actor helpers
+-- =======================================================
+
+local actors, visible_actors, to_remove, update_pool, stages, update_id = {}, {}, {}, {}, split'early_update, update, late_update, fixed_update, early_draw, draw', 1
+
+function reset_update_pool()
+	update_pool = {}
+	for stage in all(stages) do
+		update_pool[stage] = {
+			array = {},
+			lookup = {}
+		}
+	end
+end
+
+function register(actor, parent)
+    parent = parent or actor
+
+	for stage in all(stages) do
+		if actor[stage] then
+			local stage_pool = update_pool[stage]
+
+            -- save registration id on actor
+			if (not(actor.update_ids)) actor.update_ids = {}
+			actor.update_ids[stage..'_id'] = update_id
+
+            -- save actor and reference to parent to update pools
+			local registrant = {actor, parent}
+            add(stage_pool.array, registrant)
+            stage_pool.lookup[''..update_id] = registrant
+
+            update_id += 1
+
+        end
+	end
+end
+
+function unregister(actor)
+	for stage in all(stages) do
+		if actor[stage] then
+			local stage_pool = update_pool[stage]
+			local id = ''..actor.update_ids[stage..'_id']
+			local registrant = stage_pool.lookup[id]
+			del(stage_pool.array, registrant)
+			stage_pool.lookup[id] = nil
+        end
+	end
+end
+
+-- todo: find memory leak in registration
+function init_actor(actor)
+	make_physical(actor) -- add properties for x, y, w, and h
+    register(actor)
+
+	for k, compo_name in pairs(actor) do
+        local compo = compos[compo_name]
+		if compo then
+            actor[compo_name] = copy(compo)
+			if (compo.physical) make_physical(actor[compo_name])
+			if (compo.init) actor[compo_name]:init(actor)
+			register(actor[compo_name], actor)
+		end
+	end
+
+    if (actor.init) actor:init()
+
+	-- default to 'in frame' for actors with no position
+	actor.in_frame = true
+end
+
+function add_actor(actor)
+	init_actor(actor)
+    add(actors, actor)
+end
+
+function remove_actor(actor)
+    unregister(actor)
+
+	for k, compo in pairs(actor) do
+		if type(compo) == 'table' then
+			unregister(compo)
+		end
+	end
+
+    del(actors, actor)
+end
+
+
+-- =======================================================
 -- =======================================================
 -- components (compos!)
 -- =======================================================
@@ -411,7 +500,6 @@ function overlapping(obj1, obj2)
 end
 
 collider_id = 0
-colliders = { fixed = {} }
 compos.collider = {
     physical = true,
     offset = vec(0, 0),
@@ -433,9 +521,6 @@ compos.collider = {
 
         -- add to array of colliders
         parent.id = parent.id or collider_id
-		self.chunk = fixed and 'fixed' or tostr(flr(self.x / win_w))
-		if (not(colliders[self.chunk])) colliders[self.chunk] = {}
-        colliders[self.chunk][parent.id] = { self, parent }
         collider_id += 1
 
     end,
@@ -446,7 +531,7 @@ compos.collider = {
 	check_collision = function(self, parent, other)
 
 		-- only continue if this isn't the parent collider
-		if other and other.id ~= parent.id then
+		if other.collider and other.id ~= parent.id then
 
 			-- only take action if colliders overlap
 			if overlapping(parent.collider, other.collider) then
@@ -476,20 +561,10 @@ compos.collider = {
         -- loop over all colliders if parent has collider
         -- the ground never starts a collision
         if parent.collision and not(parent.is_ground) then
-			local chunk = flr(self.x / win_w)
 
 			-- permanent colliders
-			for id, v in pairs(colliders['fixed']) do
-				self:check_collision(parent, v[2])
-			end
-
-			-- nearby colliders
-			for i = chunk - 1, chunk + 1 do
-				if colliders[''..i] then
-					for id, v in pairs(colliders[''..i]) do
-						self:check_collision(parent, v[2])
-					end
-				end
+			for actor in all(visible_actors) do
+				self:check_collision(parent, actor)
 			end
 		end
     end,
@@ -703,95 +778,6 @@ compos.patrol = {
     end
 }
 
--- =======================================================
--- actor helpers
--- =======================================================
-
-local actors, to_remove, update_pool, stages, update_id = {}, {}, {}, split'early_update, update, late_update, fixed_update, early_draw, draw', 1
-
-function reset_update_pool()
-	update_pool = {}
-	for stage in all(stages) do
-		update_pool[stage] = {
-			array = {},
-			lookup = {}
-		}
-	end
-end
-
-function register(actor, parent)
-    parent = parent or actor
-
-	for stage in all(stages) do
-		if actor[stage] then
-			local stage_pool = update_pool[stage]
-
-            -- save registration id on actor
-			if (not(actor.update_ids)) actor.update_ids = {}
-			actor.update_ids[stage..'_id'] = update_id
-
-            -- save actor and reference to parent to update pools
-			local registrant = {actor, parent}
-            add(stage_pool.array, registrant)
-            stage_pool.lookup[''..update_id] = registrant
-
-            update_id += 1
-
-        end
-	end
-end
-
-function unregister(actor)
-	for stage in all(stages) do
-		if actor[stage] then
-			local stage_pool = update_pool[stage]
-			local id = ''..actor.update_ids[stage..'_id']
-			local registrant = stage_pool.lookup[id]
-			del(stage_pool.array, registrant)
-			stage_pool.lookup[id] = nil
-        end
-	end
-end
-
--- todo: find memory leak in registration
-function init_actor(actor)
-	make_physical(actor) -- add properties for x, y, w, and h
-    register(actor)
-
-	for k, compo_name in pairs(actor) do
-        local compo = compos[compo_name]
-		if compo then
-            actor[compo_name] = copy(compo)
-			if (compo.physical) make_physical(actor[compo_name])
-			if (compo.init) actor[compo_name]:init(actor)
-			register(actor[compo_name], actor)
-		end
-	end
-
-    if (actor.init) actor:init()
-
-	-- default to 'in frame' for actors with no position
-	actor.in_frame = true
-end
-
-function add_actor(actor)
-	init_actor(actor)
-    add(actors, actor)
-end
-
-function remove_actor(actor)
-    unregister(actor)
-
-	for k, compo in pairs(actor) do
-		if type(compo) == 'table' then
-			unregister(compo)
-		end
-	end
-
-    del(actors, actor)
-    if (actor.collider) colliders[actor.collider.chunk][''..actor.id] = nil
-end
-
 
 -- =======================================================
 -- lifecycle management
@@ -819,6 +805,7 @@ function compos_update()
 	permalogs = new_permalogs
 
 	-- loop over all actors to determine if in frame
+    visible_actors = {};
 	for actor in all(actors) do
 
 		-- only loop over (nearly) visible actors
@@ -831,6 +818,8 @@ function compos_update()
 
         -- state machines
 		if actor.in_frame then
+
+            add(visible_actors, actor)
 
 			-- create state machines if needed
 			if (actor.state == nil and actor.default_state) actor.state = actor.default_state
