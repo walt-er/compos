@@ -29,17 +29,6 @@ function copy(o)
     return c
 end
 
--- del by index - keeps order
--- by ultrabrite
--- https://www.lexaloffle.com/bbs/?pid=35344
-function idel(t,i)
-    local n=#t
-    if i>0 and i<=n then
-        for j=i,n-1 do t[j]=t[j+1] end
-        t[n]=nil
-    end
-end
-
 function ceil(num)
     return flr(num+0x0.ffff)
 end
@@ -69,7 +58,7 @@ end
 -- debugging helpers (remove for prod)
 -- =======================================================
 
-logs, permalogs, show_colliders, show_stats, log_states, log_statuses = {}, {}, true, true, false, false
+logs, permalogs, show_colliders, show_stats, log_states, log_statuses = {}, {}, false, true, false, false
 
 function reverse(table)
     for i=1, flr(#table / 2) do
@@ -107,16 +96,17 @@ end
 -- =======================================================
 
 function trigger_state(state, actor, states)
-
 	-- default to player
 	actor = actor or player
 	states = states or player_states
 
 	-- run new state
-    actor.state = states[state]
-    if (actor.state) actor.state(actor, states)
-    return
+    if states[state] then
+        actor.state = states[state]
+        actor.state(actor, states)
+    end
 
+    return
 end
 
 -- =======================================================
@@ -168,34 +158,40 @@ end
 
 function outline_spr(id, x, y, w, h, outline, fill, flip_x, flip_y, zoom)
 
-	-- change all colors to outline color
-    outline = outline or 0
-    for i=1, 15 do
-        if (i ~= transparent) pal(i, outline)
-    end
+    -- don't outline
+	if outline == -1 then
+        set_transparent_colors()
+        zspr(id, x, y, w, h, flip_x, flip_y, zoom)
+	else
 
-    -- draw outline sprites
-    for i = -1, 1 do
-        for j = -1, 1 do
-            if not(abs(i) == abs(j)) then
-                zspr(id, x+i, y+j, w, h, flip_x, flip_y, zoom)
+        -- change all colors to outline color
+        outline = outline or 0
+        for i=1, 15 do
+            if (i ~= transparent) pal(i, outline)
+        end
+
+        -- draw outline sprites
+        for i = -1, 1 do
+            for j = -1, 1 do
+                if not(abs(i) == abs(j)) then
+                    zspr(id, x+i, y+j, w, h, flip_x, flip_y, zoom)
+                end
             end
         end
-    end
 
-    -- fill sprite or draw full color sprite on top of outline
-    if fill then
-        -- change all colors to fill color
-        for i=0, 15 do
-            if (i ~= transparent) pal(i, fill)
+        -- fill sprite or draw full color sprite on top of outline
+        if fill then
+            -- change all colors to fill color
+            for i=0, 15 do
+                if (i ~= transparent) pal(i, fill)
+            end
+            zspr(id, x, y, w, h, flip_x, flip_y, zoom)
+            set_transparent_colors()
+        else
+            set_transparent_colors()
+            zspr(id, x, y, w, h, flip_x, flip_y, zoom)
         end
-        zspr(id, x, y, w, h, flip_x, flip_y, zoom)
-        set_transparent_colors()
-    else
-        set_transparent_colors()
-        zspr(id, x, y, w, h, flip_x, flip_y, zoom)
     end
-
 end
 
 -- fill with sprite pattern (not 100% accurate?)
@@ -259,21 +255,29 @@ function unregister(actor)
 	end
 end
 
--- todo: find memory leak in registration
+-- all actors have "physical" properties for size and location
+function make_physical(thing)
+	thing.x, thing.y, thing.w, thing.h = thing.x or 0, thing.y or 0, thing.w or tile, thing.h or tile
+end
+
 function init_actor(actor)
-	make_physical(actor) -- add properties for x, y, w, and h
+    -- add default properties for x, y, w, and h
+	make_physical(actor)
+
+    -- register actor update/draw function
     register(actor)
 
+    -- initialize and register all compos on actor
 	for k, compo_name in pairs(actor) do
         local compo = compos[compo_name]
 		if compo then
             actor[compo_name] = copy(compo)
-			if (compo.physical) make_physical(actor[compo_name])
 			if (compo.init) actor[compo_name]:init(actor)
 			register(actor[compo_name], actor)
 		end
 	end
 
+    -- run actor init function once compos are initialized
     if (actor.init) actor:init()
 
 	-- default to 'in frame' for actors with no position
@@ -305,19 +309,18 @@ end
 -- =======================================================
 
 -- functions for "physical" objects
-function make_physical(thing)
-	thing.x, thing.y, thing.w, thing.h = thing.x or 0, thing.y or 0, thing.w or tile, thing.h or tile
-end
-
 function resize(thing, w, h)
     if h then
+        -- rects take two values
         thing.w, thing.h = w, h
     else
+        -- circles take one value
         thing.r, thing.w, thing.h = w, w, w
     end
 end
 
 function translate(thing, x, y)
+    -- translate works for both circles and rects
 	thing.x, thing.y = x, y
 end
 
@@ -412,9 +415,6 @@ compos.velocity = {
         -- get new set of coordinates using current velocity (don't apply yet)
         self.newvec = vec(parent.x + self.x, parent.y + self.y)
 
-        -- move collider if need be
-        if (parent.collider) parent.collider:move(self.newvec)
-
         --decay
         self.x *= self.decay.x
         self.y *= self.decay.y
@@ -428,26 +428,25 @@ compos.velocity = {
     end
 }
 
--- todo: refactor
-function collision_direction(col1, col2, flipped)
+function collision_direction(col1, col2)
     local direction = ''
 
-    local left_overlap, right_overlap, bottom_overlap, top_overlap = col1.x > col2.x + col2.w - 1, col1.x + col1.w - 1 <= col2.x, col1.y + col1.h - 1 <= col2.y, col1.y >= col2.y + col2.h - 1
+    local left_overlap, right_overlap, bottom_overlap, top_overlap = col1.x > col2.x + col2.w, col1.x + col1.w < col2.x, col1.y + col1.h < col2.y, col1.y > col2.y + col2.h
 
-    if right_overlap or (flipped and left_overlap) then
-        direction = 'right'
-    elseif left_overlap or (flipped and right_overlap) then
-        direction = 'left'
-    elseif top_overlap or (flipped and bottom_overlap) then
+    if top_overlap then
         direction = 'top'
-    elseif bottom_overlap or (flipped and top_overlap) then
+    elseif bottom_overlap then
         direction = 'bottom'
+    elseif right_overlap then
+        direction = 'right'
+    elseif left_overlap  then
+        direction = 'left'
     end
 
     -- if no direction, retry with smaller colliders
     if direction == '' and col1.w > 2 and col1.h > 2 and col2.w > 2 and col2.h > 2 then
 		local new_col1, new_col2 = obj(col1.x + 1, col1.y + 1, col1.w - 2, col1.h - 2), obj(col2.x + 1, col2.y + 1, col2.w - 2, col2.h - 2)
-        return collision_direction(new_col1, new_col2, flipped)
+        return collision_direction(new_col1, new_col2)
     else
         return direction
     end
@@ -460,6 +459,31 @@ function sqrdist(obj1, obj2)
     return (obj1.x-obj2.x)^2+(obj1.y-obj2.y)^2
 end
 
+function overlapping_rects(obj1, obj2)
+	local x = obj1.x + obj1.w >= obj2.x and obj1.x <= obj2.x + obj2.w
+	local y = obj1.y + obj1.h >= obj2.y and obj1.y <= obj2.y + obj2.h
+	return x and y
+end
+
+-- todo: make this real! right now it just checks against corners
+function circle_overlapping_rect(obj1, obj2)
+
+    -- determine which is circle and which is rect
+    local r, circle, rectangle = obj1.r or obj2.r, obj1.r and obj1 or obj2, obj1.r and obj2 or obj1
+
+    -- get rect bounds
+    local rect_l, rect_r, rect_t, rect_b = rectangle.x, rectangle.x + rectangle.w, rectangle.y, rectangle.y + rectangle.h
+
+    -- check for overlap
+    local overlap_tl = r*r > sqrdist(circle, vec(rect_l, rect_t))
+    local overlap_tr = r*r > sqrdist(circle, vec(rect_r, rect_t))
+    local overlap_bl = r*r > sqrdist(circle, vec(rect_l, rect_b))
+    local overlap_br = r*r > sqrdist(circle, vec(rect_r, rect_b))
+
+    return overlap_tl or overlap_tr or overlap_bl or overlap_br
+
+end
+
 -- based in part on work by bridgs
 -- https://github.com/bridgs/trans-gal-jam
 function overlapping(obj1, obj2)
@@ -467,90 +491,76 @@ function overlapping(obj1, obj2)
 
     -- two circles overlapping
     if r1 and r2 then
-
         return sqrdist(obj1, obj2) < (r1+r2)^2
 
     -- one circle, one rect overlapping
-    -- todo: make this real! right now it just checks against corners
     elseif r1 or r2 then
-
-        local r = r1 or r2
-        local circle = r1 and obj1 or obj2
-        local rectangle = r1 and obj2 or obj1
-
-        local rect_l, rect_r, rect_t, rect_b = rectangle.x, rectangle.x + rectangle.w, rectangle.y, rectangle.y + rectangle.h
-
-        local overlap_tl = r*r > sqrdist(circle, vec(rect_l, rect_t))
-        local overlap_tr = r*r > sqrdist(circle, vec(rect_r, rect_t))
-        local overlap_bl = r*r > sqrdist(circle, vec(rect_l, rect_b))
-        local overlap_br = r*r > sqrdist(circle, vec(rect_r, rect_b))
-
-        return overlap_tl or overlap_tr or overlap_bl or overlap_br
+        return circle_overlapping_rect(obj1, obj2)
 
     -- two rectangles overlapping
     else
-
-        local x = obj1.x + obj1.w >= obj2.x and obj1.x <= obj2.x + obj2.w
-        local y = obj1.y + obj1.h >= obj2.y and obj1.y <= obj2.y + obj2.h
-        return x and y
-
+        return overlapping_rects(obj1, obj2)
     end
 
     return false
 end
 
+function check_collision(parent, other)
+
+    -- only continue if this isn't the parent collider
+        -- only take action if colliders overlap
+    if other.collider and other.id ~= parent.id then
+
+        -- get new collider positions based on current parent velocity
+        -- define objects to represent colliders at new positions
+        local parent_pos, other_pos = parent.velocity and parent.velocity.newvec or parent, other.velocity and other.velocity.newvec or other
+        local parent_col = obj(
+            parent_pos.x + parent.collider.offset.x,
+            parent_pos.y + parent.collider.offset.y,
+            parent.collider.w,
+            parent.collider.h
+        )
+        local other_col = obj(
+            other_pos.x + other.collider.offset.x,
+            other_pos.y + other.collider.offset.y,
+            other.collider.w,
+            other.collider.h
+        )
+
+        -- check if colliders overlap
+        if overlapping(parent_col, other_col) then
+
+            if parent.velocity then
+
+                -- run gravity collision with objects below
+                -- run collision calculations on parent object if needed
+                if (parent.gravity and not(parent.thrown) and other.is_ground) parent.velocity.newvec = trigger_grounding(parent, other, parent.velocity.newvec)
+                if (parent.collision) parent.velocity.newvec = parent:collision(parent.velocity.newvec, other)
+
+            elseif parent.static_collision then
+
+                -- collider function that doesn't return a new position
+                parent:static_collision(other)
+
+            end
+        end
+    end
+end
+
 collider_id = 0
 compos.collider = {
-    physical = true,
     offset = vec(0, 0),
-    set = function(self, parent, offset, fixed, w, h)
+    set = function(self, parent, offset, w, h, r)
 
         -- set size and offset from parent
         self.offset = offset or vec(0, 0)
-        self.x = parent.x + self.offset.x
-        self.y = parent.y + self.offset.y
-
-        -- set dimensions
-        if parent.r then
-            local r = w or parent.r
-            self.r, self.w, self.h = r, r, r
-        else
-            self.w = w or parent.w
-            self.h = h or parent.h
-        end
+        self.w, self.h, self.r = w or parent.w, h or parent.h, r or parent.r
 
         -- add to array of colliders
         parent.id = parent.id or collider_id
         collider_id += 1
 
     end,
-	move = function(self, newvec)
-        self.x = newvec.x + self.offset.x
-        self.y = newvec.y + self.offset.y
-	end,
-	check_collision = function(self, parent, other)
-
-		-- only continue if this isn't the parent collider
-		if other.collider and other.id ~= parent.id then
-
-			-- only take action if colliders overlap
-			if overlapping(parent.collider, other.collider) then
-				if (parent.velocity) then
-
-					-- run gravity collision with objects below
-					if (parent.gravity and not(parent.thrown) and other.is_ground) parent.velocity.newvec = parent.gravity:trigger_grounding(parent, other, parent.velocity.newvec)
-
-					-- run collision calculations on parent object if needed
-					if (parent.collision) parent.velocity.newvec = parent:collision(parent.velocity.newvec, other)
-
-				elseif parent.static_collision then
-
-					parent:static_collision(other)
-
-				end
-			end
-		end
-	end,
     late_update = function(self, parent)
 
         -- reset gravity, only set grounded to true if colliding with ground
@@ -564,24 +574,17 @@ compos.collider = {
 
 			-- permanent colliders
 			for actor in all(visible_actors) do
-				self:check_collision(parent, actor)
+				check_collision(parent, actor)
 			end
 		end
     end,
 
-    fixed_update = function(self, parent)
-
-		self.x = parent.x + self.offset.x
-		self.y = parent.y + self.offset.y
-
-    end,
-
     draw = function(self, parent)
         if show_colliders then
-            if self.r then
-                circ(self.x, self.y, self.r, 11)
+            if parent.r then
+                circ(parent.x + self.offset.x, parent.y + self.offset.y, self.r, 11)
             else
-                rect(self.x, self.y, self.x + self.w, self.y + self.h, 11)
+                rect(parent.x + self.offset.x, parent.y + self.offset.y, parent.x + self.offset.x + self.w, parent.y + self.offset.y + self.h, 11)
             end
         end
     end
@@ -596,19 +599,21 @@ compos.gravity = {
     end,
     early_update = function(self, parent)
         parent.velocity.y += self.force
-    end,
-    trigger_grounding = function(self, parent, other, newvec)
-
-        local direction = collision_direction(parent, other)
-        if direction == 'bottom' then
-            parent.grounded = true
-			parent.velocity.y = min(0, parent.velocity.y)
-            newvec.y = other.collider.y - parent.h
-        end
-
-        return newvec
     end
 }
+
+function trigger_grounding(parent, other, newvec)
+
+    local direction = collision_direction(parent, other)
+    if direction == 'bottom' then
+        parent.grounded = true
+        parent.velocity.y = min(0, parent.velocity.y)
+        newvec.y = other.y + other.collider.offset.y - parent.h
+    end
+
+    return newvec
+
+end
 
 --
 
@@ -621,6 +626,7 @@ compos.sprite = {
     flipped = false,
 	flip_y = false,
     flash_count = -1,
+	outline = 0,
     old_fill = -1,
     old_outline = -1,
 
@@ -670,13 +676,12 @@ compos.sprite = {
         end
 
         -- flash
-        -- todo: refactor
         if self.flash_count > -1 and self.flashes < self.flash_count then
             if not(self.flashing) then
 
                 if (self.old_fill == -1) then
                     self.old_fill = self.fill ~= nil and self.fill + 0 or nil
-                    self.old_outline = self.outline ~= nil and self.outline + 0 or nil
+                    self.old_outline = self.outline + 0 or nil
                 end
 
                 self.fill = self.flash_color
@@ -692,8 +697,7 @@ compos.sprite = {
 
     end,
 
-    draw = function(self, parent)
-
+	draw_sprite = function(self, parent)
 		self.w = self.w or parent.w
 		self.h = self.h or parent.h
 		self.zoom = self.zoom or 1
@@ -702,7 +706,14 @@ compos.sprite = {
 		local spr_x = parent.x + (parent.w / 2) - (self.w / 2)
 		local spr_y = parent.y + (parent.h / 2) - (self.h / 2)
         outline_spr(self.id, spr_x, spr_y, (self.w / tile) / self.zoom, (self.h / tile) / self.zoom, self.outline, self.fill, self.flipped, self.flip_y, self.zoom)
+	end,
 
+	early_draw = function(self, parent)
+		if (parent.background) self.draw_sprite(self, parent);
+	end,
+
+    draw = function(self, parent)
+		if (not(parent.background)) self.draw_sprite(self, parent);
     end
 }
 
@@ -1010,7 +1021,7 @@ local collider_blob = combine(
 
             -- this function takes too colliders and returns the direction of collision
             -- the direction returned (left, right, top, or bottom) is relative to the parent
-            local direction = collision_direction(self.collider, other.collider)
+            local direction = collision_direction(self, other)
             if (direction == '') direction = rnd'2' > 0 and 'left' or 'right'
 
             -- this could be done better :/
