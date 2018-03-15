@@ -326,6 +326,23 @@ end
 
 --
 
+compos.parallax = {
+    set = function(self, parent, depth)
+        parent.depth = depth or 0
+        self:adjust_position(parent)
+    end,
+    adjust_position = function(self, parent)
+        newcoords = parent.velocity and parent.velocity.newvec or parent
+        parent.adjusted_x = newcoords.x - ((parent.depth * ((cam.x + 64) - newcoords.x)) / 100)
+        parent.adjusted_y = newcoords.y - ((parent.depth * ((cam.y + 64) - newcoords.y)) / 100)
+    end,
+    fixed_update = function(self, parent)
+        self:adjust_position(parent)
+    end
+}
+
+--
+
 compos.health = {
     total = -999,
     max = 0,
@@ -703,8 +720,10 @@ compos.sprite = {
 		self.zoom = self.zoom or 1
 
         -- render selected sprite at position
-		local spr_x = parent.x + (parent.w / 2) - (self.w / 2)
-		local spr_y = parent.y + (parent.h / 2) - (self.h / 2)
+		local parent_x = parent.adjusted_x or parent.x
+        local parent_y = parent.adjusted_y or parent.y
+		local spr_x = parent_x + (parent.w / 2) - (self.w / 2)
+		local spr_y = parent_y + (parent.h / 2) - (self.h / 2)
         outline_spr(self.id, spr_x, spr_y, (self.w / tile) / self.zoom, (self.h / tile) / self.zoom, self.outline, self.fill, self.flipped, self.flip_y, self.zoom)
 	end,
 
@@ -821,10 +840,13 @@ function compos_update()
 
 		-- only loop over (nearly) visible actors
 		if cam.x and actor.x and not(actor.fixed) then
-			actor.in_frame = actor.x + actor.w >= cam.x - win_w * 0.1
-                and actor.x <= cam.x + win_w * 1.1
-                and actor.y + actor.h >= cam.y - win_h * 0.1
-                and actor.y <= cam.y + win_h * 1.1
+            local actor_x = actor.adjusted_x or actor.x
+            local actor_y = actor.adjusted_y or actor.y
+
+			actor.in_frame = actor_x + actor.w >= cam.x - win_w * 0.1
+                and actor_x <= cam.x + win_w * 1.1
+                and actor_y + actor.h >= cam.y - win_h * 0.1
+                and actor_y <= cam.y + win_h * 1.1
 		end
 
         -- state machines
