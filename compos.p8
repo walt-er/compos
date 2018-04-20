@@ -41,11 +41,12 @@ function obj(x,y,w,h)
     return { x=x,y=y,w=w,h=h }
 end
 
-function split(string)
+function split(string, char)
+    local char = char or ','
 	data={''}
 	for i = 1, #string do
 		local d=sub(string,i,i)
-		if d == ',' then
+		if d == char then
 			add(data,'')
 		elseif d ~= ' ' then
 			data[#data] = data[#data]..d
@@ -58,7 +59,7 @@ end
 -- debugging helpers (remove for prod)
 -- =======================================================
 
-logs, permalogs, show_colliders, show_stats, log_states, log_statuses = {}, {}, false, true, false, false
+logs, permalogs, show_colliders, show_stats, log_states = {}, {}, false, false, false
 
 function reverse(table)
     for i=1, flr(#table / 2) do
@@ -70,6 +71,10 @@ function unshift(array, value)
     reverse(array)
     add(array, value)
     reverse(array)
+end
+
+function rndval(t)
+    return t[max(1, ceil(rnd(#t)))]
 end
 
 function combine(table1, table2)
@@ -84,29 +89,11 @@ function combine(table1, table2)
 end
 
 function log(message)
-    add(logs, message)
+    unshift(logs, message)
 end
 
 function plog(message)
     unshift(permalogs, message)
-end
-
--- =======================================================
--- state helpers
--- =======================================================
-
-function trigger_state(state, actor, states)
-	-- default to player
-	actor = actor or player
-	states = states or player_states
-
-	-- run new state
-    if states[state] then
-        actor.state = states[state]
-        actor.state(actor, states)
-    end
-
-    return
 end
 
 -- =======================================================
@@ -121,7 +108,7 @@ function set_transparent_colors()
 end
 
 function outline_print(s, x, y, color, outline)
-	outline = outline or 0
+	local outline = outline or 0
     for i = -1, 1 do
         for j = -1, 1 do
             if not(i == j) then
@@ -133,14 +120,14 @@ function outline_print(s, x, y, color, outline)
 end
 
 function outline_rect(x, y, x2, y2, fill, outline)
-    outline = outline or 0
+    local outline = outline or 0
     rectfill(x, y-1, x2, y2+1, outline)
     rectfill(x-1, y, x2+1, y2, outline)
     rectfill(x, y, x2, y2, fill)
 end
 
 function outline_circ(x, y, r, fill, outline)
-    outline = outline or 0
+    local outline = outline or 0
     circfill(x,y,r+1,outline)
     circfill(x,y,r,fill)
 end
@@ -156,7 +143,7 @@ function zspr(n, dx, dy, w, h, flip_x, flip_y, dz)
     end
 end
 
-function outline_spr(id, x, y, w, h, outline, fill, flip_x, flip_y, zoom)
+function outline_spr(id, x, y, w, h, outline, fill, flip_x, flip_y, zoom, color_map)
 
     -- don't outline
 	if outline == -1 then
@@ -165,7 +152,7 @@ function outline_spr(id, x, y, w, h, outline, fill, flip_x, flip_y, zoom)
 	else
 
         -- change all colors to outline color
-        outline = outline or 0
+        local outline = outline or 0
         for i=1, 15 do
             if (i ~= transparent) pal(i, outline)
         end
@@ -179,18 +166,29 @@ function outline_spr(id, x, y, w, h, outline, fill, flip_x, flip_y, zoom)
             end
         end
 
-        -- fill sprite or draw full color sprite on top of outline
+        -- reset palette
+        set_transparent_colors()
+
         if fill then
+
             -- change all colors to fill color
             for i=0, 15 do
                 if (i ~= transparent) pal(i, fill)
             end
-            zspr(id, x, y, w, h, flip_x, flip_y, zoom)
-            set_transparent_colors()
-        else
-            set_transparent_colors()
-            zspr(id, x, y, w, h, flip_x, flip_y, zoom)
+
+        elseif color_map then
+
+            -- map colors to other colors
+            pal(color_map[1], color_map[2])
+
         end
+
+        -- draw!
+        zspr(id, x, y, w, h, flip_x, flip_y, zoom)
+
+        -- reset palette
+        set_transparent_colors()
+
     end
 end
 
@@ -209,7 +207,7 @@ end
 -- actor helpers
 -- =======================================================
 
-local actors, visible_actors, to_remove, update_pool, stages, update_id = {}, {}, {}, {}, split'early_update, update, late_update, fixed_update, early_draw, draw', 1
+local actors, visible_actors, to_remove, update_pool, stages, update_id = {}, {}, {}, {}, split'state_update, early_update, update, late_update, fixed_update, background_draw, early_draw, draw, late_draw', 1
 
 function reset_update_pool()
 	update_pool = {}
@@ -356,13 +354,12 @@ compos.health = {
 
         -- store life as flag on parent, call death function
         parent.alive = self.total > 0
-		if (self.total ~= -999 and not(parent.alive) and parent.die) parent:die()
 
         -- show health bar when damaged
         self.show_health = self.damage_time and time() - self.damage_time < 2 and parent.alive
 
     end,
-    draw = function(self, parent)
+    late_draw = function(self, parent)
         if self.show_health and self.total > 0 then
 
             -- calculate position of health bar to draw
@@ -413,10 +410,10 @@ compos.velocity = {
     max_x = 999,
     max_y = 999,
     decay = vec(1, 1),
-    newvec = vec(0, 0),
-    set = function(self, x, y, decay)
+    set = function(self, x, y, decay, cap)
         self.x, self.y = x, y
         if (decay) self.decay = decay
+		if (cap) self:cap(cap.x, cap.y)
     end,
     accelerate = function(self, x_acceleration, y_acceleration)
         self.x += x_acceleration
@@ -431,6 +428,7 @@ compos.velocity = {
 
         -- get new set of coordinates using current velocity (don't apply yet)
         self.newvec = vec(parent.x + self.x, parent.y + self.y)
+        self.actualvec = self.newvec
 
         --decay
         self.x *= self.decay.x
@@ -440,15 +438,26 @@ compos.velocity = {
     fixed_update = function(self, parent)
 
         -- apply velocity after all collisions
-        translate(parent, self.newvec.x, self.newvec.y)
+        if (self.actualvec) translate(parent, self.actualvec.x, self.actualvec.y)
 
     end
 }
 
 function collision_direction(col1, col2)
-    local direction = ''
 
-    local left_overlap, right_overlap, bottom_overlap, top_overlap = col1.x > col2.x + col2.w, col1.x + col1.w < col2.x, col1.y + col1.h < col2.y, col1.y > col2.y + col2.h
+    local overlapping_y = not(col1.grounded) or col1.y + col1.h < col2.y
+
+    local direction,
+		left_overlap,
+		right_overlap,
+		bottom_overlap,
+		top_overlap
+		=
+		'',
+		col1.x >= col2.x + col2.w and overlapping_y,
+		col1.x + col1.w <= col2.x and overlapping_y,
+		col1.y + col1.h < col2.y,
+		col1.y > col2.y + col2.h
 
     if top_overlap then
         direction = 'top'
@@ -472,14 +481,22 @@ end
 -- distance between two points
 -- by freds72
 -- https://www.lexaloffle.com/bbs/?pid=49926#p49926
-function sqrdist(obj1, obj2)
-    return (obj1.x-obj2.x)^2+(obj1.y-obj2.y)^2
+function points_sqrdist(point1, point2)
+    return (point1.x-point2.x)^2+(point1.y-point2.y)^2
 end
 
-function overlapping_rects(obj1, obj2)
-	local x = obj1.x + obj1.w >= obj2.x and obj1.x <= obj2.x + obj2.w
-	local y = obj1.y + obj1.h >= obj2.y and obj1.y <= obj2.y + obj2.h
-	return x and y
+function rect_center(rect)
+	return vec(rect.x + (rect.w / 2), rect.y + (rect.h / 2));
+end
+
+function rect_sqrdist(rect1, rect2)
+	return points_sqrdist(rect_center(rect1), rect_center(rect2))
+end
+
+function rect_overlap(rect1, rect2)
+    local x = rect1.x + rect1.w >= rect2.x and rect1.x <= rect2.x + rect2.w
+    local y = rect1.y + rect1.h >= rect2.y and rect1.y <= rect2.y + rect2.h
+    return x and y
 end
 
 -- todo: make this real! right now it just checks against corners
@@ -516,7 +533,7 @@ function overlapping(obj1, obj2)
 
     -- two rectangles overlapping
     else
-        return overlapping_rects(obj1, obj2)
+        return rect_overlap(obj1, obj2)
     end
 
     return false
@@ -551,8 +568,12 @@ function check_collision(parent, other)
 
                 -- run gravity collision with objects below
                 -- run collision calculations on parent object if needed
-                if (parent.gravity and not(parent.thrown) and other.is_ground) parent.velocity.newvec = trigger_grounding(parent, other, parent.velocity.newvec)
-                if (parent.collision) parent.velocity.newvec = parent:collision(parent.velocity.newvec, other)
+                if parent.gravity and not(parent.thrown) and other.is_ground then
+                    parent.velocity.actualvec = trigger_grounding(parent, other, parent.velocity.newvec)
+                end
+                if parent.collision then
+                    parent.velocity.actualvec = parent:collision(parent.velocity.newvec, other)
+                end
 
             elseif parent.static_collision then
 
@@ -582,12 +603,12 @@ compos.collider = {
 
         -- reset gravity, only set grounded to true if colliding with ground
         if parent.gravity then
-            parent.grounded, parent.thrown = false, false
+            parent.should_unground, parent.thrown = true, false
         end
 
         -- loop over all colliders if parent has collider
         -- the ground never starts a collision
-        if parent.collision and not(parent.is_ground) then
+        if parent.collision or parent.static_collision then
 
 			-- permanent colliders
 			for actor in all(visible_actors) do
@@ -616,14 +637,18 @@ compos.gravity = {
     end,
     early_update = function(self, parent)
         parent.velocity.y += self.force
-    end
+    end,
+	fixed_update = function(self, parent)
+		parent.grounded = not(parent.should_unground)
+		parent.should_unground = false
+	end
 }
 
 function trigger_grounding(parent, other, newvec)
 
     local direction = collision_direction(parent, other)
     if direction == 'bottom' then
-        parent.grounded = true
+        parent.should_unground = false
         parent.velocity.y = min(0, parent.velocity.y)
         newvec.y = other.y + other.collider.offset.y - parent.h
     end
@@ -657,7 +682,7 @@ compos.sprite = {
     end,
 
     animate = function(self, parent, spritesheet, fps, loop, zoom)
-        self.animating, self.loop, self.sheet, self.frame, self.fps, self.zoom, self.t = true, loop, spritesheet, 0.1, fps, zoom ~= nil and zoom or 1, time()
+        self.animating, self.loop, self.sheet, self.frame, self.fps, self.zoom, self.t = true, loop, spritesheet, 0.1, fps, zoom or 1, time()
     end,
 
     stop_animation = function(self)
@@ -673,6 +698,22 @@ compos.sprite = {
         self.fill, self.outline, self.flashing, self.old_fill, self.old_outline, self.flash_count = self.old_fill, self.old_outline, false, -1, -1, -1
     end,
 
+	init = function(self, parent)
+
+		self.flipped = parent.flipped
+
+		if parent.background then
+			self.background_draw = self.draw_sprite
+		elseif parent.early then
+			self.early_draw = self.draw_sprite
+		elseif parent.foreground then
+			self.late_draw = self.draw_sprite
+		else
+			self.draw = self.draw_sprite
+		end
+
+	end,
+
     update = function(self, parent)
 
 		local sheet = self.sheet
@@ -685,7 +726,7 @@ compos.sprite = {
             frame = self.loop and frame % #sheet or min(#sheet, frame)
 
             -- set new frame
-            self.id = sheet[max(1, ceil(frame))]
+            self.id = sheet[max(1, ceil(frame))] + 0
 
             -- stop animation (if not looping) at end of sheet
             if (not(self.loop) and frame >= #sheet) self:stop_animation()
@@ -697,7 +738,7 @@ compos.sprite = {
             if not(self.flashing) then
 
                 if (self.old_fill == -1) then
-                    self.old_fill = self.fill ~= nil and self.fill + 0 or nil
+                    self.old_fill = self.fill or nil
                     self.old_outline = self.outline + 0 or nil
                 end
 
@@ -724,30 +765,38 @@ compos.sprite = {
         local parent_y = parent.adjusted_y or parent.y
 		local spr_x = parent_x + (parent.w / 2) - (self.w / 2)
 		local spr_y = parent_y + (parent.h / 2) - (self.h / 2)
-        outline_spr(self.id, spr_x, spr_y, (self.w / tile) / self.zoom, (self.h / tile) / self.zoom, self.outline, self.fill, self.flipped, self.flip_y, self.zoom)
-	end,
 
-	early_draw = function(self, parent)
-		if (parent.background) self.draw_sprite(self, parent);
-	end,
-
-    draw = function(self, parent)
-		if (not(parent.background)) self.draw_sprite(self, parent);
+        -- draw the sprite!
+        outline_spr(
+            self.id,
+            spr_x,
+            spr_y,
+            (self.w / tile) / self.zoom,
+            (self.h / tile) / self.zoom,
+            self.outline,
+            self.fill,
+            self.flipped,
+            self.flip_y,
+            self.zoom,
+            self.color_map
+        )
     end
 }
 
 --
 
 compos.age = {
+	init = function(self, parent)
+		self.birth, self.death = time(), 1  --default to one second
+	end,
     set = function(self, death)
-        self.birth = time()
-        self.death = death
+        self.birth, self.death = time(), death
     end,
     update = function(self, parent)
         if self.birth and time() - self.birth > self.death then
             remove_actor(parent)
         end
-    end,
+    end
 }
 
 --
@@ -808,6 +857,60 @@ compos.patrol = {
     end
 }
 
+--
+
+function trigger_state(state_name, parent, machine_index)
+	local parent = parent or player;
+	local parent_state = parent.state
+	local i = machine_index or 1
+	local machine = parent_state.state_machines[i]
+
+	if machine and machine[state_name] then
+		parent_state.current_states[i] = state_name
+		parent_state:run_state(machine[state_name], parent, i);
+	end
+end
+
+compos.state = {
+	last_states = {},
+	is_active = function(self, state)
+		for i = 1, #self.state_machines do
+			for k, v in pairs(self.state_machines[i]) do
+				if (self.current_states[i] == k and k == state) return true
+			end
+		end
+		return false
+	end,
+	init = function(self, parent)
+		self.current_states = parent.default_states or {}
+		self.state_machines = #parent.states > 0 and parent.states or { parent.states }
+	end,
+	run_state = function(self, state, parent, machine_index)
+		if state ~= self.last_states[machine_index] then
+			self.last_states[machine_index] = state
+			if (state[1]) state[1](parent) -- init
+		end
+		if (state[2]) state[2](parent) --update
+	end,
+	state_update = function(self, parent)
+		local machines = self.state_machines
+
+		if machines and #self.current_states > 0 then
+			for i = 1, #machines do
+				local machine = machines[i];
+				local current_name = self.current_states[i];
+				local current_state = machine[current_name]
+
+				if (log_states) log(parent.tag .. ': ' .. current_name)
+
+				if current_state then
+					self:run_state(current_state, parent, i)
+				end
+			end
+		end
+	end
+}
+
 
 -- =======================================================
 -- lifecycle management
@@ -839,7 +942,7 @@ function compos_update()
 	for actor in all(actors) do
 
 		-- only loop over (nearly) visible actors
-		if cam.x and actor.x and not(actor.fixed) then
+		if cam.x and actor.x and not(actor.fixed) and not(actor.age) then
             local actor_x = actor.adjusted_x or actor.x
             local actor_y = actor.adjusted_y or actor.y
 
@@ -849,26 +952,12 @@ function compos_update()
                 and actor_y <= cam.y + win_h * 1.1
 		end
 
-        -- state machines
-		if actor.in_frame then
+		if (actor.in_frame) add(visible_actors, actor)
 
-            add(visible_actors, actor)
-
-			-- create state machines if needed
-			if (actor.state == nil and actor.default_state) actor.state = actor.default_state
-			if (actor.status == nil and actor.default_status) actor.status = actor.default_status
-
-			---------------------
-			-- run state machines
-			---------------------
-			if (actor.state) actor.state(actor, actor.state_list)
-			if (actor.status) actor.status(actor, actor.status_list)
-
-		end
 	end
 
 	-- run updates on actors and props that have registered to update
-	for i = 1, #stages - 1 do -- don't include draw stages
+	for i = 1, #stages - 3 do -- don't include draw stages
 		local stage = stages[i]
 		for k, actor in pairs(update_pool[stage].array) do
 			if (actor[2].in_frame ~= false) actor[1][stage](actor[1], actor[2])
@@ -888,7 +977,7 @@ end
 function compos_draw()
 
 	-- run draw on actors and props that have registered to draw
-	for i = #stages - 1, #stages do -- only include draw stages
+	for i = #stages - 3, #stages do -- only include draw stages
 		local stage = stages[i]
 		for k, actor in pairs(update_pool[stage].array) do
 			if (actor[2].in_frame ~= false) actor[1][stage](actor[1], actor[2])
