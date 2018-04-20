@@ -55,6 +55,21 @@ function split(string, char)
 	return data
 end
 
+function rndval(t)
+    return t[max(1, ceil(rnd(#t)))]
+end
+
+function combine(table1, table2)
+    for k,v in pairs(table2) do
+        if type(k) == 'string' then
+            table1[k] = v
+        else
+            add(table1, v)
+        end
+    end
+    return table1
+end
+
 -- =======================================================
 -- debugging helpers (remove for prod)
 -- =======================================================
@@ -71,21 +86,6 @@ function unshift(array, value)
     reverse(array)
     add(array, value)
     reverse(array)
-end
-
-function rndval(t)
-    return t[max(1, ceil(rnd(#t)))]
-end
-
-function combine(table1, table2)
-    for k,v in pairs(table2) do
-        if type(k) == 'string' then
-            table1[k] = v
-        else
-            add(table1, v)
-        end
-    end
-    return table1
 end
 
 function log(message)
@@ -307,6 +307,7 @@ end
 -- =======================================================
 
 -- functions for "physical" objects
+
 function resize(thing, w, h)
     if h then
         -- rects take two values
@@ -391,15 +392,6 @@ function hurt(actor, attack)
 		attack.armed = false
 
     end
-end
-
-function throw(actor, newvec, distance)
-	distance = distance or 2
-    local flip = player.flip_x or 1
-	local throwvec = vec(flip * distance, -distance)
-	actor.velocity:set(throwvec.x, throwvec.y)
-	actor.thrown = true
-	return vec(newvec.x + throwvec.x, newvec.y + throwvec.y)
 end
 
 --
