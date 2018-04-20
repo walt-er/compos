@@ -1,16 +1,12 @@
-
-
 -- ======================================z=================
 -- helper functions
 -- =======================================================
-require('core/core');
-require('core/debugging');
-require('core/drawing');
+require('core/core')
+require('core/debugging')
+require('core/drawing')
 
 -- =======================================================
--- =======================================================
 -- components (compos!)
--- =======================================================
 -- =======================================================
 
 require('components/parallax')
@@ -22,3 +18,9 @@ require('components/sprite')
 require('components/age')
 require('components/patrol')
 require('components/state')
+
+-- =======================================================
+-- demo!
+-- =======================================================
+
+require('demos/bouncy-blobs', {use_game_loop=true})

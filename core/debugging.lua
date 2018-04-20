@@ -2,7 +2,7 @@
 -- debugging helpers (remove for prod)
 -- =======================================================
 
-logs, permalogs, show_colliders, show_stats, log_states = {}, {}, false, false, false
+logs, permalogs, show_colliders, show_stats, log_states = {}, {}, false, true, false
 
 function reverse(table)
     for i=1, flr(#table / 2) do

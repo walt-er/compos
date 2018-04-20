@@ -86,7 +86,7 @@ end
 -- actor helpers
 -- =======================================================
 
-local actors, visible_actors, to_remove, update_pool, stages, update_id = {}, {}, {}, {}, split'state_update, early_update, update, late_update, fixed_update, background_draw, early_draw, draw, late_draw', 1
+actors, visible_actors, to_remove, update_pool, stages, update_id = {}, {}, {}, {}, split'state_update, early_update, update, late_update, fixed_update, background_draw, early_draw, draw, late_draw', 1
 
 function reset_update_pool()
 	update_pool = {}

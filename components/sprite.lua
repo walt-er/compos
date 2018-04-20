@@ -101,7 +101,7 @@ compos.sprite = {
 	draw_sprite = function(self, parent)
 		self.w = self.w or parent.w
 		self.h = self.h or parent.h
-		self.zoom = self.zoom or 1
+        self.zoom = self.zoom or 1
 
         -- render selected sprite at position
 		local parent_x = parent.adjusted_x or parent.x
