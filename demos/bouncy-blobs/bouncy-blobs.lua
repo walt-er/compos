@@ -1,6 +1,15 @@
+require('core/core')
+require('core/debugging')
+require('core/drawing')
+
+require('components/velocity')
+require('components/gravity')
+require('components/collider')
+require('components/sprite')
+
 -- make actors as objects
 -- copy compos to enable their functions
--- set compo values insite of init
+-- set compo values inside of init
 -- include init(), update(), and draw() if this actor should have its own methods
 local blob = {
     'velocity',
@@ -172,6 +181,8 @@ local title_text = {
 -- pico8 lifecycle functions
 -- call compos_* functions or add other scene logic
 function _init()
+
+    show_stats = true
 
     -- init runs on all objects currently within "actors"
     compos_init()

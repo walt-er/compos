@@ -8,6 +8,7 @@ function set_transparent_colors()
     palt(0, false)
     palt(transparent, true)
 end
+set_transparent_colors()
 
 function outline_print(s, x, y, color, outline)
 	local outline = outline or 0
