@@ -7,7 +7,7 @@ package._c["core/core"]=function()
 -- generic globals
 -- =======================================================
 
-compos, debugging, win_w, win_h, win_l, win_r, win_t, win_b, tile, cam, player, player_states = {}, true, 128, 128, 0, 128, 0, 128, 8, {}, {}, {}
+compos, win_w, win_h, win_l, win_r, win_t, win_b, tile, cam, player, player_states = {}, 128, 128, 0, 128, 0, 128, 8, {}, {}, {}
 
 -- ======================================z=================
 -- helper functions
@@ -189,7 +189,6 @@ end
 
 -- to go in _init()
 function compos_init()
-	set_transparent_colors()
 	reset_update_pool()
 	for actor in all(actors) do
 		init_actor(actor)
@@ -280,7 +279,7 @@ package._c["core/debugging"]=function()
 -- debugging helpers (remove for prod)
 -- =======================================================
 
-logs, permalogs, show_colliders, show_stats, log_states = {}, {}, false, false, false
+debugging, logs, permalogs, show_colliders, show_stats, log_states = true, {}, {}, false, false, false
 
 function reverse(table)
     for i=1, flr(#table / 2) do
@@ -313,6 +312,7 @@ function set_transparent_colors()
     palt(0, false)
     palt(transparent, true)
 end
+set_transparent_colors()
 
 function outline_print(s, x, y, color, outline)
 	local outline = outline or 0
