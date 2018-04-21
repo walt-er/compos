@@ -2,7 +2,7 @@
 -- generic globals
 -- =======================================================
 
-compos, win_w, win_h, win_l, win_r, win_t, win_b, tile, cam, player, player_states = {}, 128, 128, 0, 128, 0, 128, 8, {}, {}, {}
+compos, win_w, win_h, win_l, win_r, win_t, win_b, tile, cam, player = {}, 128, 128, 0, 128, 0, 128, 8, {}, {}
 
 -- ======================================z=================
 -- helper functions
