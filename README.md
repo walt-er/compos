@@ -1,6 +1,6 @@
 # compos: reusable components for object-oriented PICO-8
 
-compos: like "components", but with fewer characters!
+## compos: like "components", but with fewer characters!
 
 BBS thread: https://www.lexaloffle.com/bbs/?tid=30886
 
@@ -68,7 +68,7 @@ Behind the scenes, within those `compos_*` functions, there are various "pools" 
 
 When an actor is initialized, it's update functions are registered in those pools and run in the order they are added. Keep that in mind for drawing -- actors added later will be drawn on top. (Note that I want to add an optional override for this soon! For now you can use `early_draw` to make sure things are drawn in first.)
 
-It's important to remove actors by using `remove_actor()`, as opposed to, say, `del(actors, thingy)`, because the `remove_actor` function also unregisters all events. Failing to use it could mean a memory leak as more and more actors are registered and none are rmeoved.
+It's important to remove actors by using `remove_actor()`, as opposed to, say, `del(actors, thingy)`, because the `remove_actor` function also unregisters all events. Failing to use it could mean a memory leak as more and more actors are registered and none are removed.
 
 ## Integrating compos into your project
 
