@@ -1,8 +1,8 @@
 # compos: reusable components for object-oriented PICO-8
 
-## compos: like "components", but with fewer characters!
-
 BBS thread: https://www.lexaloffle.com/bbs/?tid=30886
+
+### compos are like "components", but with fewer characters!
 
 compos are independent, reusable objects that can be added to your game's actors to give them certain behaviors. compos manage their own state, initialization, updating, and drawing. The only thing you might need to do is set some intitial values.
 
